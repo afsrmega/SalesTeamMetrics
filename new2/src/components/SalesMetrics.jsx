@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import GlobalSettings from "@/components/sales/GlobalSettings";
@@ -14,11 +13,12 @@ import CommissionRangesTable from "@/components/sales/CommissionRangesTable";
 import LinkUserDialog from "@/components/sales/LinkUserDialog";
 import AllSalesRecordsTable from "@/components/sales/AllSalesRecordsTable";
 import AuditPanel from "@/components/sales/AuditPanel"; 
-import QuarterProgressTable from "@/components/sales/QuarterProgressTable";
-import TexasComparisonChart from "@/components/sales/TexasComparisonChart";
+import QuarterWeeklyProgressTable from "@/components/sales/QuarterWeeklyProgressTable";
 import PropertyTypeComparisonChart from "@/components/sales/PropertyTypeComparisonChart";
+import TexasVsOutOfStateChart from "@/components/sales/TexasVsOutOfStateChart";
 import AddSaleForm from "@/components/sales/AddSaleForm";
 import SalesFiltersBlock from "@/components/sales/SalesFiltersBlock";
+import MemberOverridesManager from "@/components/sales/MemberOverridesManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +38,7 @@ import { useRealTimeSalesData } from "@/hooks/useRealTimeSalesData";
 import { generatePowerPointReport } from "@/lib/powerPointGenerator";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { FileDown, Link as LinkIcon, AlertTriangle, RefreshCw, BarChart2, Presentation, Loader2, Calculator } from "lucide-react";
+import { FileDown, Link as LinkIcon, AlertTriangle, RefreshCw, BarChart2, Presentation, Loader2, Calculator, Settings } from "lucide-react";
 import { exportToExcelWithCharts } from "@/lib/exportToExcelWithCharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { calculateCommissionWithTiers, calculateBillingAmount, formatCurrency, getBillingRate, getCustomQuarter, getQuarterDateRange } from "@/lib/salesUtils";
@@ -62,7 +62,7 @@ const safeFormat = (date, formatStr) => {
 
 const SalesMetrics = () => {
   const { toast } = useToast();
-  const { user, globalSettings, fetchSettings } = useAuth(); 
+  const { user, globalSettings, fetchSettings, isAdmin } = useAuth(); 
   useColorPreferences();
 
   // Filters State & Persistence
@@ -80,7 +80,8 @@ const SalesMetrics = () => {
   const [selectedQuarterKey, setSelectedQuarterKey] = useState(() => localStorage.getItem('adminSelectedQuarterKey') || 'current');
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => localStorage.getItem('adminSelectedMonthKey') || 'current');
 
-  const [periodGoals, setPeriodGoals] = useState({ team_goal: 0, individual_goal: 0 });
+  const [effectiveMonthGoals, setEffectiveMonthGoals] = useState(null);
+  const [effectiveQuarterGoals, setEffectiveQuarterGoals] = useState(null);
 
   useEffect(() => {
     localStorage.setItem('adminDashboardFilters_date', JSON.stringify(dateFilter));
@@ -145,7 +146,7 @@ const SalesMetrics = () => {
     let d = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1);
     for(let i=0; i<12; i++) {
         opts.push({ 
-            key: `${d.getFullYear()}-${d.getMonth()}`, 
+            key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, 
             label: format(d, 'MMM yyyy')
         });
         d.setMonth(d.getMonth() - 1);
@@ -183,7 +184,7 @@ const SalesMetrics = () => {
       if (selectedMonthKey === 'current') throw new Error('Use current month fallback');
       const [y, m] = selectedMonthKey.split('-');
       const year = parseInt(y, 10);
-      const month = parseInt(m, 10);
+      const month = parseInt(m, 10) - 1;
       if (isNaN(year) || isNaN(month) || month < 0 || month > 11) throw new Error('Invalid month key format');
       mStart = new Date(year, month, 1);
       mStart.setHours(0, 0, 0, 0);
@@ -213,8 +214,15 @@ const SalesMetrics = () => {
 
   const fetchGoals = async () => {
     if (!safeGlobalSettings) return;
-    const goals = await getGoalsByPeriod(periodMode, currentPeriodKey, safeGlobalSettings);
-    setPeriodGoals(goals);
+    console.log('📊 [SalesMetrics] Fetching effective goals for both periods independently...');
+    
+    const monthGoals = await getGoalsByPeriod('month', computedMonthKey, safeGlobalSettings);
+    console.log('📊 [SalesMetrics] (1) effectiveMonthGoals loaded:', JSON.stringify(monthGoals));
+    setEffectiveMonthGoals(monthGoals);
+    
+    const quarterGoals = await getGoalsByPeriod('quarter', computedQuarterKey, safeGlobalSettings);
+    console.log('📊 [SalesMetrics] (2) effectiveQuarterGoals loaded:', JSON.stringify(quarterGoals));
+    setEffectiveQuarterGoals(quarterGoals);
   };
 
   useEffect(() => {
@@ -222,18 +230,24 @@ const SalesMetrics = () => {
     const handleUpdate = () => fetchGoals();
     window.addEventListener('goalsUpdated', handleUpdate);
     return () => window.removeEventListener('goalsUpdated', handleUpdate);
-  }, [periodMode, currentPeriodKey, safeGlobalSettings]);
+  }, [computedMonthKey, computedQuarterKey, safeGlobalSettings]); // independent of periodMode
+
+  useEffect(() => {
+    console.log('📊 [SalesMetrics] (4) periodMode changed to:', String(periodMode));
+  }, [periodMode]);
 
   // Override global settings with period goals for calculations
   const activeSettings = useMemo(() => {
-    return {
+    const settings = {
       ...safeGlobalSettings,
-      team_monthly_target: periodMode === 'month' ? periodGoals.team_goal : safeGlobalSettings.team_monthly_target,
-      team_quarterly_target: periodMode === 'quarter' ? periodGoals.team_goal : safeGlobalSettings.team_quarterly_target,
-      individual_monthly_commission_threshold: periodMode === 'month' ? periodGoals.individual_goal : safeGlobalSettings.individual_monthly_commission_threshold,
-      individual_quarterly_target: periodMode === 'quarter' ? periodGoals.individual_goal : safeGlobalSettings.individual_quarterly_target,
+      team_monthly_target: effectiveMonthGoals?.team_goal > 0 ? effectiveMonthGoals.team_goal : safeGlobalSettings.team_monthly_target,
+      individual_monthly_commission_threshold: effectiveMonthGoals?.individual_goal > 0 ? effectiveMonthGoals.individual_goal : safeGlobalSettings.individual_monthly_commission_threshold,
+      team_quarterly_target: effectiveQuarterGoals?.team_goal > 0 ? effectiveQuarterGoals.team_goal : safeGlobalSettings.team_quarterly_target,
+      individual_quarterly_target: effectiveQuarterGoals?.individual_goal > 0 ? effectiveQuarterGoals.individual_goal : safeGlobalSettings.individual_quarterly_target,
     };
-  }, [safeGlobalSettings, periodGoals, periodMode]);
+    console.log('📊 [SalesMetrics] (3) activeSettings constructed with all four goal values:', JSON.stringify(settings));
+    return settings;
+  }, [safeGlobalSettings, effectiveMonthGoals, effectiveQuarterGoals]);
 
   const salesTeamLive = useMemo(() => {
     if (!salesTeamRaw) return [];
@@ -287,11 +301,13 @@ const SalesMetrics = () => {
   const comparisonData = useMemo(() => {
     let residential = 0;
     let commercial = 0;
-    const activeStart = periodMode === 'quarter' ? activeQuarterStart : activeMonthStart;
-    const activeEnd = periodMode === 'quarter' ? activeQuarterEnd : activeMonthEnd;
+    const activeStart = periodMode === 'quarter' ? activeQuarterStart : activeQuarterEnd; // Note: keeping as it was, but looks like activeMonthStart is needed if month. Actually logic in orig was periodMode check.
+    const startD = periodMode === 'quarter' ? activeQuarterStart : activeMonthStart;
+    const endD = periodMode === 'quarter' ? activeQuarterEnd : activeMonthEnd;
+    
     filteredSalesRecordsFinal.forEach(r => {
       const recordDate = validateDate(new Date(r.created_at));
-      if (!recordDate || recordDate < activeStart || recordDate > activeEnd) return;
+      if (!recordDate || recordDate < startD || recordDate > endD) return;
       const type = (r.property_type || '').toLowerCase().trim();
       if (type === 'residential' || type === 'residencial') {
         residential += parseFloat(r.value) || 0;
@@ -331,7 +347,7 @@ const SalesMetrics = () => {
         const runRate = cumulativeGoal > 0 ? (cumulativeAccomplished / cumulativeGoal) * 100 : 0;
         const quarterAchievement = quarterGoal > 0 ? (cumulativeAccomplished / quarterGoal) * 100 : 0;
         return {
-          weekEnding: friday,
+          weekEnding: safeFormat(friday, 'MMM d, yyyy'), // CONVERTED TO STRING HERE
           weekNumber,
           goal: cumulativeGoal,
           accomplished: cumulativeAccomplished,
@@ -452,6 +468,20 @@ const SalesMetrics = () => {
     }
   };
 
+  const renderQuarterWeeklyProgressTable = () => {
+    console.log('📊 [SalesMetrics] Passing effectiveQuarterGoals to QuarterWeeklyProgressTable:', JSON.stringify(effectiveQuarterGoals));
+    return (
+      <QuarterWeeklyProgressTable 
+        weeklyData={weeklyData} 
+        globalSettings={activeSettings}
+        isLoading={isLoading}
+        isMemberView={false}
+        totalWeeks={weeklyData?.length || 13}
+        effectiveQuarterGoals={effectiveQuarterGoals}
+      />
+    );
+  };
+
   const unlinkedMembersCount = salesTeamRaw ? salesTeamRaw.filter(m => !m.linkedUserId).length : 0;
 
   if (isLoading) { 
@@ -555,11 +585,12 @@ const SalesMetrics = () => {
       </div>
       
       <Tabs defaultValue="dashboard" className="w-full">
-        <TabsList className="mb-6 w-full sm:w-auto grid grid-cols-1 sm:grid-cols-4">
-            <TabsTrigger value="dashboard">Dashboard Principal</TabsTrigger>
-            <TabsTrigger value="progress"><BarChart2 className="h-4 w-4 mr-2" /> Progreso Trimestral</TabsTrigger>
-            <TabsTrigger value="records">Registro Histórico</TabsTrigger>
-            <TabsTrigger value="audit"><AlertTriangle className="h-4 w-4 text-custom-accent mr-2" /> Auditoría y Sync</TabsTrigger>
+        <TabsList className="mb-6 w-full sm:w-auto flex flex-wrap h-auto">
+            <TabsTrigger value="dashboard" className="flex-1 sm:flex-none">Dashboard Principal</TabsTrigger>
+            <TabsTrigger value="progress" className="flex-1 sm:flex-none"><BarChart2 className="h-4 w-4 mr-2 hidden md:block" /> Progreso Trimestral</TabsTrigger>
+            <TabsTrigger value="records" className="flex-1 sm:flex-none">Registro Histórico</TabsTrigger>
+            <TabsTrigger value="overrides" className="flex-1 sm:flex-none"><Settings className="h-4 w-4 mr-2 hidden md:block" /> Config. Cuotas</TabsTrigger>
+            <TabsTrigger value="audit" className="flex-1 sm:flex-none"><AlertTriangle className="h-4 w-4 text-custom-accent mr-2 hidden md:block" /> Auditoría</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="space-y-8 p-1">
@@ -592,7 +623,13 @@ const SalesMetrics = () => {
             </section>
 
              <section>
-              <TexasComparisonChart salesTeam={enrichedSalesTeam} />
+              <TexasVsOutOfStateChart 
+                selectedMonth={activeMonthStart}
+                periodMode={dateFilter.mode === 'reset' ? 'month' : 'custom'}
+                includeResidential={includeResidential}
+                customStartDate={dateFilter.startDate}
+                customEndDate={dateFilter.endDate}
+              />
             </section>
 
             <section>
@@ -620,6 +657,9 @@ const SalesMetrics = () => {
                       onDeleteMember={handleDeleteMember}
                       onEditMember={handleOpenEditDialog}
                       disabled={!user}
+                      effectiveMonthGoals={effectiveMonthGoals}
+                      effectiveQuarterGoals={effectiveQuarterGoals}
+                      periodMode={periodMode}
                   />
                   <SalesTeamTableQuarterly 
                       salesTeam={enrichedSalesTeam}
@@ -627,17 +667,32 @@ const SalesMetrics = () => {
                       onDeleteMember={handleDeleteMember}
                       onEditMember={handleOpenEditDialog}
                       disabled={!user}
+                      effectiveMonthGoals={effectiveMonthGoals}
+                      effectiveQuarterGoals={effectiveQuarterGoals}
+                      periodMode={periodMode}
                   />
                 </div>
             </section>
         </TabsContent>
 
         <TabsContent value="progress" className="p-1 mt-6">
-          <QuarterProgressTable weeklyData={weeklyData} quarterGoal={activeSettings.team_quarterly_target} />
+          {renderQuarterWeeklyProgressTable()}
         </TabsContent>
 
         <TabsContent value="records" className="p-1 mt-6">
              <AllSalesRecordsTable />
+        </TabsContent>
+
+        <TabsContent value="overrides" className="p-1 mt-6">
+          {isAdmin ? (
+            <MemberOverridesManager />
+          ) : (
+            <Alert className="bg-amber-50 text-amber-800 border-amber-200">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTitle>Acceso Denegado</AlertTitle>
+              <AlertDescription>Solo los administradores pueden gestionar las cuotas personalizadas de los miembros.</AlertDescription>
+            </Alert>
+          )}
         </TabsContent>
 
         <TabsContent value="audit" className="p-1 mt-6">

@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
@@ -7,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { LogIn, UserCircle2 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 const SalesLoginPage = () => {
   const [email, setEmail] = useState("");
@@ -63,29 +64,33 @@ const SalesLoginPage = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-8 pt-4">
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
               <div className="space-y-2">
                 <Label htmlFor="email">Email Corporativo</Label>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
                   placeholder="nombre@empresa.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="bg-gray-50"
+                  autoComplete="username"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
                 <Input
                   id="password"
+                  name="password"
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="Contraseña"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                   className="bg-gray-50"
+                  className="bg-gray-50"
+                  autoComplete="current-password"
                 />
               </div>
               <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={isLoading}>
@@ -97,7 +102,7 @@ const SalesLoginPage = () => {
           </CardContent>
         </Card>
         <div className="text-center mt-6">
-            <Link to="/" className="text-sm text-gray-500 hover:text-gray-800 underline">¿Eres Administrador? Ingresa aquí</Link>
+            <a href="/" className="text-sm text-gray-500 hover:text-gray-800 underline">¿Eres Administrador? Ingresa aquí</a>
         </div>
       </motion.div>
     </div>

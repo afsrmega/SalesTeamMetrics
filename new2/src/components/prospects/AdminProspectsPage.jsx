@@ -2,8 +2,6 @@
 import React from 'react';
 import ProspectsPage from './ProspectsPage';
 
-// For brevity in this comprehensive file, the Admin view heavily reuses the ProspectsPage 
-// but benefits from the isAdmin hook fetching all data.
 const AdminProspectsPage = () => {
   return (
     <div className="admin-prospects">

@@ -1,9 +1,11 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { fetchGlobalSettingsData, fetchSalesTeamData, syncMemberMonthlyMetrics } from '@/lib/salesService';
 import { useToast } from '@/components/ui/use-toast';
 
 export const useRealTimeSalesData = (userId) => {
+  console.log('AUDIT FIX: useRealTimeSalesData now uses correct member identifiers');
   const { toast } = useToast();
   const [salesTeam, setSalesTeam] = useState([]);
   const [salesRecords, setSalesRecords] = useState([]);

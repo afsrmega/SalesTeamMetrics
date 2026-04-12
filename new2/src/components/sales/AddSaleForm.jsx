@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { Button } from "@/components/ui/button";
@@ -162,7 +163,7 @@ const AddSaleForm = ({ memberId, onSalesChange, mode = "member", salesTeam = [],
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Seleccionar Miembro..." />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="dropdown-scroll">
                    {salesTeam.map(member => (
                       <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
                    ))}
@@ -227,7 +228,7 @@ const AddSaleForm = ({ memberId, onSalesChange, mode = "member", salesTeam = [],
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar Tipo" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="dropdown-scroll">
                    {PROPERTY_TYPES.map(type => (
                       <SelectItem key={type} value={type}>{type}</SelectItem>
                    ))}
@@ -242,7 +243,7 @@ const AddSaleForm = ({ memberId, onSalesChange, mode = "member", salesTeam = [],
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar Subtipo" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="dropdown-scroll">
                      {COMMERCIAL_SUBTYPES.map(subtype => (
                         <SelectItem key={subtype} value={subtype}>{subtype}</SelectItem>
                      ))}

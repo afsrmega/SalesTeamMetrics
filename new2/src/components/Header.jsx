@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { LogOut, Briefcase, UserCircle, Loader2, Users, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';

@@ -12,7 +12,7 @@ import { Settings, Loader2, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '@/lib/salesUtils';
 
 const GlobalSettings = ({ disabled, periodMode, periodKey, periodLabel }) => {
-  const { globalSettings } = useAuth();
+  const { user, globalSettings } = useAuth();
   const { toast } = useToast();
   
   const [isOpen, setIsOpen] = useState(false);
@@ -32,8 +32,8 @@ const GlobalSettings = ({ disabled, periodMode, periodKey, periodLabel }) => {
     try {
       const data = await getGoalsByPeriod(periodMode, periodKey, globalSettings);
       setGoals({
-        teamGoal: data.team_goal.toString(),
-        individualGoal: data.individual_goal.toString()
+        teamGoal: data.team_goal ? data.team_goal.toString() : '',
+        individualGoal: data.individual_goal ? data.individual_goal.toString() : ''
       });
     } catch (error) {
       console.error(error);
@@ -55,8 +55,6 @@ const GlobalSettings = ({ disabled, periodMode, periodKey, periodLabel }) => {
   };
 
   const handleSaveInit = () => {
-    // Check if it's a past period (simple check: if not 'current' string, could be past or future)
-    // For safety, just show the confirm dialog
     setShowConfirm(true);
   };
 
@@ -64,13 +62,27 @@ const GlobalSettings = ({ disabled, periodMode, periodKey, periodLabel }) => {
     setShowConfirm(false);
     setIsSaving(true);
     try {
-      await saveGoalsByPeriod(periodMode, periodKey, goals.teamGoal, goals.individualGoal);
+      if (!user?.id) throw new Error("Usuario no autenticado");
+      
+      await saveGoalsByPeriod(
+        periodMode, 
+        periodKey, 
+        goals.teamGoal, 
+        goals.individualGoal, 
+        user.id
+      );
+      
       toast({ title: "Metas Guardadas", description: `Metas actualizadas para ${periodLabel}` });
       setIsOpen(false);
       // Dispatch a custom event so parent components can refetch
       window.dispatchEvent(new Event('goalsUpdated'));
     } catch (error) {
-      toast({ title: "Error", description: "No se pudieron guardar las metas.", variant: "destructive" });
+      console.error("Save error:", error);
+      toast({ 
+        title: "Error al guardar", 
+        description: error.message || "No se pudieron guardar las metas.", 
+        variant: "destructive" 
+      });
     } finally {
       setIsSaving(false);
     }

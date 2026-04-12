@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TrendingUp, Loader2 } from "lucide-react";
@@ -11,8 +12,7 @@ const MonthlyPerformanceCard = ({ monthStart, monthEnd, memberId, globalSettings
     loading 
   } = useMonthlyPerformance(memberId, monthStart, monthEnd);
 
-  // Extract individual_monthly_commission_threshold from globalSettings or default to 16000000
-  const individualMonthlyTarget = parseFloat(globalSettings?.individual_monthly_commission_threshold || 16000000);
+  const teamMonthlyTarget = globalSettings?.team_monthly_target ? parseFloat(globalSettings.team_monthly_target) : null;
 
   return (
     <Card className="h-full shadow-md border-t-4 border-t-custom-primary">
@@ -36,9 +36,9 @@ const MonthlyPerformanceCard = ({ monthStart, monthEnd, memberId, globalSettings
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-gray-400 uppercase">Meta Mensual General Ind.</p>
+              <p className="text-xs text-gray-400 uppercase">Meta Mensual Equipo</p>
               <p className="text-xl font-semibold text-custom-primary">
-                {formatCurrency(individualMonthlyTarget)}
+                {teamMonthlyTarget && teamMonthlyTarget > 0 ? formatCurrency(teamMonthlyTarget) : "Meta no configurada"}
               </p>
             </div>
             <div className="mt-2">

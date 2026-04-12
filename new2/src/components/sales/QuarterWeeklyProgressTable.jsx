@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+
+import React, { useMemo, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,10 +9,26 @@ import { motion } from "framer-motion";
 import { formatCurrency } from "@/lib/salesUtils";
 import { useColorPreferences } from "@/hooks/useColorPreferences";
 import QuarterProgressChart from '@/components/sales/QuarterProgressChart';
+import { resolveQuarterGoalForMember } from '@/lib/goalsService';
 
-const QuarterWeeklyProgressTable = ({ weeklyData, globalSettings, isLoading, isMemberView, totalWeeks }) => {
+const QuarterWeeklyProgressTable = ({ 
+  weeklyData, 
+  globalSettings, 
+  isLoading, 
+  isMemberView, 
+  totalWeeks, 
+  individualQuarterGoal, 
+  effectiveQuarterGoals,
+  memberId,
+  selectedQuarter,
+  memberQuarterlyQuota,
+  overrideEnabled
+}) => {
   useColorPreferences();
-  
+
+  const [resolvedQuarterGoal, setResolvedQuarterGoal] = useState(0);
+  const [isResolvingGoal, setIsResolvingGoal] = useState(false);
+
   const getStatusColor = (percentage) => {
       const val = parseFloat(percentage);
       if (val >= 100) return "text-custom-secondary font-bold";
@@ -19,16 +36,31 @@ const QuarterWeeklyProgressTable = ({ weeklyData, globalSettings, isLoading, isM
       return "text-red-600 font-bold";
   };
 
-  const individualQuarterlyTarget = parseFloat(globalSettings?.individual_quarterly_target || 0);
-  const teamQuarterlyTarget = parseFloat(globalSettings?.team_quarterly_target || 0);
+  // Use effectiveQuarterGoals if provided, else fallback to globalSettings
+  const teamQuarterlyTarget = parseFloat(effectiveQuarterGoals?.team_goal > 0 ? effectiveQuarterGoals.team_goal : (globalSettings?.team_quarterly_target || 0));
   
-  const quarterGoal = isMemberView || individualQuarterlyTarget > 0 
-    ? individualQuarterlyTarget 
-    : teamQuarterlyTarget;
+  const goalLabel = isMemberView ? "Individual Q Goal" : "Team Q Goal";
 
-  const goalLabel = isMemberView || individualQuarterlyTarget > 0 ? "Individual Q Goal" : "Team Q Goal";
+  useEffect(() => {
+    const fetchGoal = async () => {
+      if (isMemberView && memberId && selectedQuarter) {
+        setIsResolvingGoal(true);
+        const goal = await resolveQuarterGoalForMember({
+          memberId,
+          selectedQuarter,
+          memberQuarterlyQuota,
+          overrideEnabled
+        });
+        setResolvedQuarterGoal(goal);
+        setIsResolvingGoal(false);
+      } else if (!isMemberView) {
+        setResolvedQuarterGoal(teamQuarterlyTarget);
+      }
+    };
+    fetchGoal();
+  }, [isMemberView, memberId, selectedQuarter, memberQuarterlyQuota, overrideEnabled, teamQuarterlyTarget]);
 
-  const dataLength = weeklyData ? weeklyData.length : (totalWeeks || 1);
+  const dataLength = weeklyData ? weeklyData.length : (totalWeeks || 13);
 
   // Base cumulative goal dynamically on actual total weeks of the quarter
   const calculateCumulativeGoal = (weekNumber, target) => {
@@ -38,12 +70,12 @@ const QuarterWeeklyProgressTable = ({ weeklyData, globalSettings, isLoading, isM
   const enrichedData = useMemo(() => {
     if (!weeklyData) return [];
     return weeklyData.map(row => {
-      const computedCumGoal = calculateCumulativeGoal(row.weekNumber, quarterGoal);
+      const computedCumGoal = calculateCumulativeGoal(row.weekNumber, resolvedQuarterGoal);
       const computedRunRate = computedCumGoal > 0 
           ? ((parseFloat(row.accomplished) / computedCumGoal) * 100).toFixed(1) 
           : 0;
-      const achievement = quarterGoal > 0 
-          ? ((parseFloat(row.accomplished) / quarterGoal) * 100).toFixed(1) 
+      const achievement = resolvedQuarterGoal > 0 
+          ? ((parseFloat(row.accomplished) / resolvedQuarterGoal) * 100).toFixed(1) 
           : 0;
 
       return {
@@ -53,12 +85,12 @@ const QuarterWeeklyProgressTable = ({ weeklyData, globalSettings, isLoading, isM
         achievement
       };
     });
-  }, [weeklyData, quarterGoal, dataLength]);
+  }, [weeklyData, resolvedQuarterGoal, dataLength]);
 
   const currentWeek = enrichedData.find(d => d.isCurrentWeek);
   const currentWeekNumber = currentWeek ? currentWeek.weekNumber : null;
 
-  if (isLoading) {
+  if (isLoading || isResolvingGoal) {
     return (
         <Card className="mt-8 shadow-md border-gray-200">
             <CardHeader>
@@ -109,7 +141,7 @@ const QuarterWeeklyProgressTable = ({ weeklyData, globalSettings, isLoading, isM
                       </div>
                       <div className="flex items-center gap-2">
                            <Badge variant="outline" className="bg-white text-custom-secondary border-custom-secondary px-3 py-1 text-sm font-medium shadow-sm">
-                               {goalLabel}: {formatCurrency(quarterGoal)}
+                               {goalLabel}: {formatCurrency(resolvedQuarterGoal)}
                            </Badge>
                       </div>
                   </div>
@@ -140,7 +172,7 @@ const QuarterWeeklyProgressTable = ({ weeklyData, globalSettings, isLoading, isM
                                       `}
                                   >
                                       <TableCell className="font-medium text-custom-text flex items-center gap-2">
-                                          {row.weekEnding}
+                                          {row.weekEnding instanceof Date ? row.weekEnding.toLocaleDateString() : String(row.weekEnding)}
                                           {row.isCurrentWeek && (
                                               <Badge className="bg-custom-secondary text-xs h-5 px-1.5 hover:bg-custom-secondary/90">Current</Badge>
                                           )}

@@ -1,7 +1,8 @@
 import { DEFAULT_RATES } from './globalSettingsService';
 import { getQuarterDateRange } from './getQuarterDateRange';
+import { selectTierRate } from './commissionCalculationUtils';
 
-export { getQuarterDateRange }; // Re-export for compatibility with other files importing it from here
+export { getQuarterDateRange };
 
 export const formatCurrency = (value) => {
   const num = parseFloat(value);
@@ -57,35 +58,25 @@ export const calculateBillingAmount = (salesValue, billingRates, propertyType, s
   return val * rate;
 };
 
-export const calculateCommissionWithTiers = (billingAmount, quota, commissionTiers) => {
-    const val = parseFloat(billingAmount) || 0;
+export const calculateCommissionWithTiers = (totalSales, billingAmount, quota, commissionTiers) => {
+    const valSales = parseFloat(totalSales) || 0;
+    const valBill = parseFloat(billingAmount) || 0;
     const target = parseFloat(quota) || 1;
     
-    const quotaPercentage = (val / target) * 100;
+    const quotaPercentage = target > 0 ? (valSales / target) * 100 : 0;
     
-    let appliedRate = 0;
+    const appliedRate = selectTierRate(quotaPercentage, commissionTiers);
+    
     let tierRange = "None";
-    
     if (commissionTiers && Array.isArray(commissionTiers) && commissionTiers.length > 0) {
-        const match = commissionTiers.find(tier => {
-            const min = parseFloat(tier.min);
-            const max = parseFloat(tier.max);
-            return quotaPercentage >= min && quotaPercentage <= max;
-        });
-        
+        const sortedTiers = [...commissionTiers].sort((a, b) => parseFloat(a.min) - parseFloat(b.min));
+        const match = sortedTiers.reverse().find(t => quotaPercentage >= parseFloat(t.min));
         if (match) {
-            appliedRate = parseFloat(match.rate);
-            tierRange = `${match.min}% - ${match.max}%`;
-        } else {
-             const lastTier = commissionTiers[commissionTiers.length - 1];
-             if (lastTier && quotaPercentage > parseFloat(lastTier.max)) {
-                 appliedRate = parseFloat(lastTier.rate);
-                 tierRange = `> ${lastTier.max}%`;
-             }
+            tierRange = match.max ? `${match.min}% - ${match.max}%` : `>= ${match.min}%`;
         }
     }
     
-    const commissionAmount = val * (appliedRate / 100);
+    const commissionAmount = valBill * (appliedRate / 100);
 
     return {
         commissionAmount,

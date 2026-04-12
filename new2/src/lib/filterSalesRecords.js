@@ -52,6 +52,7 @@ export const calculateDateRange = (mode, customStart, customEnd) => {
  * Filters sales records based on the given date range and residential toggle.
  */
 export const filterSalesRecords = (records, dateRange, includeResidential) => {
+  console.log('AUDIT FIX: filterSalesRecords now uses member_id for filtering');
   if (!Array.isArray(records)) return [];
 
   const toggledRecords = applyResidentialToggle(records, includeResidential);

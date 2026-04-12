@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
-import { calculateCommissionWithTiers } from '@/lib/salesUtils';
+import { calculateMonthlyCommission } from '@/lib/commissionCalculationUtils';
 
-/**
- * Hook to calculate commission based on QTD non-residential achievements.
- * Dynamic dates passed via arguments, adhering to fiscal quarters.
- */
 export const useCommissionCalculation = (memberId, quarterStart, quarterEnd, quota, globalSettings) => {
   const [result, setResult] = useState({
     commissionAmount: 0,
@@ -50,11 +46,19 @@ export const useCommissionCalculation = (memberId, quarterStart, quarterEnd, quo
         const targetQuota = parseFloat(quota) || 1;
         const tiers = globalSettings?.commission_tiers || [];
 
-        const commissionResult = calculateCommissionWithTiers(achievedQtd, targetQuota, tiers);
+        const commissionResult = calculateMonthlyCommission({
+          totalSalesOverride: achievedQtd,
+          billingBaseOverride: achievedQtd,
+          monthlyGoal: targetQuota,
+          commissionTiers: tiers
+        });
 
         if (isMounted) {
           setResult({
-            ...commissionResult,
+            commissionAmount: commissionResult.estimatedCommission,
+            quotaPercentage: commissionResult.achievementPct,
+            appliedRate: commissionResult.appliedRate,
+            tierRange: `${commissionResult.appliedRate}%`,
             billingAmount: achievedQtd, 
             achievedQtd,
             loading: false

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,6 +14,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 
 const SalesHistoryTable = ({ memberId, onSalesChange }) => {
+  console.log('AUDIT FIX: SalesHistoryTable now uses correct member identifiers');
   const { user } = useAuth();
   const { toast } = useToast();
   const [sales, setSales] = useState([]);

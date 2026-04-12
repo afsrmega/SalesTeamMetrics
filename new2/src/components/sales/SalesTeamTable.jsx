@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.jsx";
@@ -9,14 +10,22 @@ import MemberSalesDialog from "@/components/sales/MemberSalesDialog";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMember, disabled }) => {
+const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMember, disabled, effectiveMonthGoals, effectiveQuarterGoals, periodMode }) => {
   const [selectedMemberForSales, setSelectedMemberForSales] = useState(null);
   const [isSalesModalOpen, setIsSalesModalOpen] = useState(false);
   const [quarterLabel, setQuarterLabel] = useState("");
 
+  const teamGoalUsed = periodMode === 'month' 
+    ? (effectiveMonthGoals?.team_goal > 0 ? effectiveMonthGoals.team_goal : globalSettings?.team_monthly_target)
+    : (effectiveQuarterGoals?.team_goal > 0 ? effectiveQuarterGoals.team_goal : globalSettings?.team_quarterly_target);
+
+  useEffect(() => {
+    console.log(`📊 [SalesTeamTable] (6) Using periodMode: ${String(periodMode)}, team goal used:`, String(teamGoalUsed));
+  }, [periodMode, teamGoalUsed]);
+
   useEffect(() => {
     const { quarterLabel: ql } = getCustomQuarter(new Date());
-    setQuarterLabel(ql);
+    setQuarterLabel(String(ql));
   }, []);
 
   const rankedTeam = salesTeam.length > 0 

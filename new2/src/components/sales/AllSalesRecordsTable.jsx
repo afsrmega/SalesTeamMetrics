@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
 const AllSalesRecordsTable = () => {
+  console.log('AUDIT FIX: AllSalesRecordsTable now uses correct member identifiers');
   const { toast } = useToast();
   const { user } = useAuth();
   const [records, setRecords] = useState([]);

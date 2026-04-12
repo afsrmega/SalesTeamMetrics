@@ -29,24 +29,18 @@ export const updateClientWithHistory = async (clientId, updates, effectiveAt, no
     p_effective_at: effectiveAt,
     p_note: note || ''
   });
-  // Note: Added fallback normal update if RPC not strictly defined yet in prompt for client
-  if (error && error.message.includes('function public.update_client_with_history does not exist')) {
-    await supabase.from('clients').update(updates).eq('id', clientId);
-    await supabase.from('client_history').insert([{
-        client_id: clientId,
-        changed_by: (await supabase.auth.getUser()).data.user.id,
-        effective_at: effectiveAt,
-        changes: updates,
-        note: note
-    }]);
-    return;
-  }
+  
   if (error) throw error;
   return data;
 };
 
 export const getClientHistory = async (clientId) => {
-  const { data, error } = await supabase.from('client_history').select('*').eq('client_id', clientId).order('effective_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('client_history')
+    .select('id, changed_by, effective_at, changes, note, created_at')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+    
   if (error) throw error;
   return data;
 };
@@ -54,4 +48,33 @@ export const getClientHistory = async (clientId) => {
 export const deleteClient = async (id) => {
   const { error } = await supabase.from('clients').delete().eq('id', id);
   if (error) throw error;
+};
+
+export const getClientTags = async (clientId) => {
+  const { data, error } = await supabase
+    .from('client_tags')
+    .select('tag_id, tags(id, name)')
+    .eq('client_id', clientId);
+  if (error) throw error;
+  return data?.map(d => d.tags) || [];
+};
+
+export const buildClientTagsMap = async (clients) => {
+  if (!clients || clients.length === 0) return {};
+  const ids = clients.map(c => c.id);
+  const { data, error } = await supabase
+    .from('client_tags')
+    .select('client_id, tags(id, name, color)')
+    .in('client_id', ids);
+    
+  if (error) throw error;
+  
+  const map = {};
+  ids.forEach(id => { map[id] = []; });
+  data?.forEach(row => {
+    if (row.tags) {
+      map[row.client_id].push(row.tags);
+    }
+  });
+  return map;
 };

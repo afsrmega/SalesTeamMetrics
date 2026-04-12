@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.jsx";
@@ -7,12 +8,20 @@ import { Trash2, Edit3 } from "lucide-react";
 import { formatCurrency, getCustomQuarter } from "@/lib/salesUtils";
 import { Badge } from "@/components/ui/badge";
 
-const SalesTeamTableQuarterly = ({ salesTeam, globalSettings, onDeleteMember, onEditMember, disabled }) => {
+const SalesTeamTableQuarterly = ({ salesTeam, globalSettings, onDeleteMember, onEditMember, disabled, effectiveMonthGoals, effectiveQuarterGoals, periodMode }) => {
   const [quarterLabel, setQuarterLabel] = useState("");
+
+  const teamGoalUsed = periodMode === 'month' 
+    ? (effectiveMonthGoals?.team_goal > 0 ? effectiveMonthGoals.team_goal : globalSettings?.team_monthly_target)
+    : (effectiveQuarterGoals?.team_goal > 0 ? effectiveQuarterGoals.team_goal : globalSettings?.team_quarterly_target);
+
+  useEffect(() => {
+    console.log(`📊 [SalesTeamTableQuarterly] (6) Using periodMode: ${String(periodMode)}, team goal used:`, String(teamGoalUsed));
+  }, [periodMode, teamGoalUsed]);
 
   useEffect(() => {
     const { quarterLabel: label } = getCustomQuarter();
-    setQuarterLabel(label);
+    setQuarterLabel(String(label));
   }, []);
 
   const rankedTeam = salesTeam.length > 0 

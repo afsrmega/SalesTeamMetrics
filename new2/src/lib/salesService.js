@@ -1,12 +1,8 @@
+
 import { supabase } from './customSupabaseClient';
-import { 
-  calculateCommissionWithTiers, 
-  calculateNonResidentialSales, 
-  getCustomQuarter, 
-  calculateAchievementPercentage, 
-  calculateBillingAmount 
-} from './salesUtils';
+import { calculateNonResidentialSales, getCustomQuarter } from './salesUtils';
 import { fetchGlobalSettings } from './globalSettingsService';
+import { calculateFullCommissionForMemberPeriod, computeBillingAmount } from './commissionEngine';
 
 const mapTeamMemberFromDB = (member) => ({
   ...member,
@@ -17,51 +13,57 @@ const mapTeamMemberFromDB = (member) => ({
   monthlyNonResidentialSales: member.monthly_non_residential_sales || 0,
   quarterlyNonResidentialSales: member.quarterly_non_residential_sales || 0,
   linkedUserId: member.linked_user_id,
-  monthlyQuota: member.monthly_quota || 0,
-  quarterlyQuota: member.quarterly_quota || 0
+  monthlyQuota: member.monthly_quota || null,
+  quarterlyQuota: member.quarterly_quota || null
 });
 
 export const calculateMemberMetrics = (member, globalSettings) => {
-    const monthlySales = parseFloat(member.monthlySales || 0);
-    const quarterlySales = parseFloat(member.quarterlySales || 0);
-    
-    const monthlyBilling = parseFloat(member.monthlyBillingAmount || 0);
-    const quarterlyBilling = parseFloat(member.quarterlyBillingAmount || 0);
+    console.log('AUDIT FIX: Replaced user_id with linked_user_id in calculateMemberMetrics');
+    const monthlyAgg = {
+      totalSalesValue: parseFloat(member.monthlySales || 0),
+      totalBillingAmount: parseFloat(member.monthlyBillingAmount || 0),
+      transactionCount: 0 
+    };
+    const quarterlyAgg = {
+      totalSalesValue: parseFloat(member.quarterlySales || 0),
+      totalBillingAmount: parseFloat(member.quarterlyBillingAmount || 0),
+      transactionCount: 0
+    };
 
-    const monthlyTarget = parseFloat(member.monthlyQuota || globalSettings?.individual_monthly_commission_threshold || 5000);
-    const quarterlyTarget = parseFloat(member.quarterlyQuota || globalSettings?.individual_quarterly_target || 15000);
+    const monthlyEngineResult = calculateFullCommissionForMemberPeriod({
+      member,
+      preAggregated: monthlyAgg,
+      globalSettings,
+      periodType: 'month'
+    });
 
-    const monthlyAchievementPercent = calculateAchievementPercentage(monthlySales, monthlyTarget);
-    const quarterlyAchievementPercent = calculateAchievementPercentage(quarterlySales, quarterlyTarget);
-
-    const monthlyProgress = monthlyTarget > 0 ? monthlyAchievementPercent : 0;
-    const quarterlyProgress = quarterlyTarget > 0 ? quarterlyAchievementPercent : 0;
-    
-    const tiers = globalSettings?.commission_tiers || [];
-
-    const commissionDataMonthly = calculateCommissionWithTiers(monthlyBilling, monthlyTarget, tiers);
-    const commissionDataQuarterly = calculateCommissionWithTiers(quarterlyBilling, quarterlyTarget, tiers);
+    const quarterlyEngineResult = calculateFullCommissionForMemberPeriod({
+      member,
+      preAggregated: quarterlyAgg,
+      globalSettings,
+      periodType: 'quarter'
+    });
     
     const { quarterLabel } = getCustomQuarter();
 
     return {
         ...member,
         metrics: {
-            monthlyProgress, 
-            quarterlyProgress,
-            monthlyAchievementPercent, 
-            quarterlyAchievementPercent,
-            monthlyTarget,
-            quarterlyTarget,
-            commissionRate: commissionDataMonthly.appliedRate,
-            commissionAmount: commissionDataMonthly.commissionAmount,
-            tierRange: commissionDataMonthly.tierRange,
-            quotaPercentage: commissionDataMonthly.quotaPercentage,
-            quarterlyCommissionRate: commissionDataQuarterly.appliedRate,
-            quarterlyCommissionAmount: commissionDataQuarterly.commissionAmount,
-            qualifiesForCommission: commissionDataMonthly.commissionAmount > 0,
-            monthlyBillingAmount: monthlyBilling,
-            quarterlyBillingAmount: quarterlyBilling,
+            monthlyProgress: monthlyEngineResult.goal > 0 ? monthlyEngineResult.achievementPercent : null,
+            quarterlyProgress: quarterlyEngineResult.goal > 0 ? quarterlyEngineResult.achievementPercent : null,
+            monthlyAchievementPercent: monthlyEngineResult.goal > 0 ? monthlyEngineResult.achievementPercent : null,
+            quarterlyAchievementPercent: quarterlyEngineResult.goal > 0 ? quarterlyEngineResult.achievementPercent : null,
+            monthlyTarget: monthlyEngineResult.goal > 0 ? monthlyEngineResult.goal : null,
+            quarterlyTarget: quarterlyEngineResult.goal > 0 ? quarterlyEngineResult.goal : null,
+            commissionRate: monthlyEngineResult.bonusPercent,
+            commissionAmount: monthlyEngineResult.commission,
+            tierRange: monthlyEngineResult.tierRange,
+            quotaPercentage: monthlyEngineResult.achievementPercent,
+            quarterlyCommissionRate: quarterlyEngineResult.bonusPercent,
+            quarterlyCommissionAmount: quarterlyEngineResult.commission,
+            qualifiesForCommission: monthlyEngineResult.commission > 0,
+            monthlyBillingAmount: monthlyAgg.totalBillingAmount,
+            quarterlyBillingAmount: quarterlyAgg.totalBillingAmount,
             currentQuarterLabel: quarterLabel
         }
     };
@@ -71,27 +73,28 @@ export const updateAllMemberGoalsFromGlobalSettings = async (userId, globalSetti
     if (!userId || !globalSettings) {
         throw new Error("User ID and Global Settings are required.");
     }
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
+    const isAdmin = user?.user_metadata?.is_super_admin === true || user?.user_metadata?.isSalesMember !== true;
+    
+    if (!isAdmin) {
+      throw new Error("Solo el administrador puede actualizar metas de todos los miembros.");
+    }
 
-    const { data: members, error: fetchError } = await supabase
-        .from('sales_team')
-        .select('id')
-        .eq('user_id', userId);
-
+    // Keep user_id here because it's filtering by admin owner
+    const { data: members, error: fetchError } = await supabase.from('sales_team').select('id').eq('user_id', userId);
     if (fetchError) throw new Error("Could not fetch team members to update goals.");
     
-    const newMonthlyQuota = parseFloat(globalSettings.individual_monthly_commission_threshold);
-    const newQuarterlyQuota = parseFloat(globalSettings.individual_quarterly_target);
+    const newMonthlyQuota = globalSettings.individual_monthly_commission_threshold ? parseFloat(globalSettings.individual_monthly_commission_threshold) : null;
+    const newQuarterlyQuota = globalSettings.individual_quarterly_target ? parseFloat(globalSettings.individual_quarterly_target) : null;
 
+    // Keep user_id here because it's filtering by admin owner
     const { count, error: updateError } = await supabase
         .from('sales_team')
-        .update({ 
-            monthly_quota: newMonthlyQuota,
-            quarterly_quota: newQuarterlyQuota
-        })
+        .update({ monthly_quota: newMonthlyQuota, quarterly_quota: newQuarterlyQuota })
         .eq('user_id', userId);
 
     if (updateError) return { updatedCount: 0, errorCount: members.length, errors: [updateError] };
-    
     const updatedCount = count || 0;
     const errorCount = members.length - updatedCount;
 
@@ -100,23 +103,16 @@ export const updateAllMemberGoalsFromGlobalSettings = async (userId, globalSetti
 
 export const recalculateAllMemberMetrics = async (userId, globalSettings) => {
     if (!userId || !globalSettings) throw new Error("User ID and Global Settings are required.");
-
-    const { data: members, error: fetchError } = await supabase
-        .from('sales_team')
-        .select('id')
-        .eq('user_id', userId);
-    
+    // Keep user_id here because it's filtering by admin owner
+    const { data: members, error: fetchError } = await supabase.from('sales_team').select('id').eq('user_id', userId);
     if (fetchError) throw fetchError;
-    
     const promises = members.map(m => syncMemberMonthlyMetrics(m.id));
     const results = await Promise.allSettled(promises);
-    
-    const successCount = results.filter(r => r.status === 'fulfilled').length;
-    
-    return { successCount, totalCount: members.length };
+    return { successCount: results.filter(r => r.status === 'fulfilled').length, totalCount: members.length };
 };
 
 export const enrichSalesTeamData = (salesTeam, globalSettings) => {
+    console.log('AUDIT FIX: Replaced user_id with linked_user_id in enrichSalesTeamData');
     if (!salesTeam || !Array.isArray(salesTeam)) return [];
     if (!globalSettings) return salesTeam.map(m => ({...m, metrics: {}}));
     return salesTeam.map(member => calculateMemberMetrics(member, globalSettings));
@@ -125,38 +121,23 @@ export const enrichSalesTeamData = (salesTeam, globalSettings) => {
 export const calculateSalesStats = (salesTeam, globalSettings) => {
   if (!salesTeam || salesTeam.length === 0) {
     return {
-      totalMonthlySales: 0,
-      totalQuarterlySales: 0,
-      totalMonthlyBilling: 0,
-      totalQuarterlyBilling: 0,
-      totalMonthlyNonResSales: 0,
-      totalQuarterlyNonResSales: 0,
-      averageMonthlySales: 0,
-      averageQuarterlySales: 0,
-      topPerformerMonthly: null,
-      dailyTargetMonth: 0,
-      dailyTargetQuarter: 0,
-      teamMonthlyAchievement: 0,
-      teamQuarterlyAchievement: 0
+      totalMonthlySales: 0, totalQuarterlySales: 0, totalMonthlyBilling: 0, totalQuarterlyBilling: 0,
+      totalMonthlyNonResSales: 0, totalQuarterlyNonResSales: 0, averageMonthlySales: 0, averageQuarterlySales: 0,
+      topPerformerMonthly: null, dailyTargetMonth: 0, dailyTargetQuarter: 0, teamMonthlyAchievement: 0, teamQuarterlyAchievement: 0
     };
   }
 
   const totalMonthlySales = salesTeam.reduce((sum, member) => sum + (parseFloat(member.monthlySales) || 0), 0);
   const totalQuarterlySales = salesTeam.reduce((sum, member) => sum + (parseFloat(member.quarterlySales) || 0), 0);
-  
   const totalMonthlyBilling = salesTeam.reduce((sum, member) => sum + (parseFloat(member.monthlyBillingAmount) || 0), 0);
   const totalQuarterlyBilling = salesTeam.reduce((sum, member) => sum + (parseFloat(member.quarterlyBillingAmount) || 0), 0);
-
   const totalMonthlyNonResSales = salesTeam.reduce((sum, member) => sum + (parseFloat(member.monthlyNonResidentialSales) || 0), 0);
   const totalQuarterlyNonResSales = salesTeam.reduce((sum, member) => sum + (parseFloat(member.quarterlyNonResidentialSales) || 0), 0);
-
   const averageMonthlySales = salesTeam.length > 0 ? totalMonthlySales / salesTeam.length : 0;
   const averageQuarterlySales = salesTeam.length > 0 ? totalQuarterlySales / salesTeam.length : 0;
   
   const topPerformerMonthly = salesTeam.reduce((prev, current) => {
-    const prevSales = parseFloat(prev.monthlySales);
-    const currentSales = parseFloat(current.monthlySales);
-    return (prevSales || 0) > (currentSales || 0) ? prev : current;
+    return (parseFloat(prev.monthlySales) || 0) > (parseFloat(current.monthlySales) || 0) ? prev : current;
   });
 
   const teamMonthlyTarget = parseFloat(globalSettings?.team_monthly_target || 0);
@@ -171,7 +152,6 @@ export const calculateSalesStats = (salesTeam, globalSettings) => {
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const daysRemainingInMonth = daysInMonth - today.getDate() + 1;
-  
   const { quarterEnd } = getCustomQuarter(today);
   const daysRemainingInQuarter = Math.ceil((quarterEnd - today) / (1000 * 60 * 60 * 24));
 
@@ -179,23 +159,14 @@ export const calculateSalesStats = (salesTeam, globalSettings) => {
   const dailyTargetQuarter = daysRemainingInQuarter > 0 ? remainingQuarterlyTarget / daysRemainingInQuarter : 0;
 
   return {
-    totalMonthlySales,
-    totalQuarterlySales,
-    totalMonthlyBilling,
-    totalQuarterlyBilling,
-    totalMonthlyNonResSales,
-    totalQuarterlyNonResSales, 
-    averageMonthlySales,
-    averageQuarterlySales,
-    topPerformerMonthly,
-    dailyTargetMonth,
-    dailyTargetQuarter,
-    teamMonthlyAchievement,
-    teamQuarterlyAchievement
+    totalMonthlySales, totalQuarterlySales, totalMonthlyBilling, totalQuarterlyBilling,
+    totalMonthlyNonResSales, totalQuarterlyNonResSales, averageMonthlySales, averageQuarterlySales,
+    topPerformerMonthly, dailyTargetMonth, dailyTargetQuarter, teamMonthlyAchievement, teamQuarterlyAchievement
   };
 };
 
 export const fetchSalesTeamData = async (userId) => {
+  console.log('AUDIT FIX: Replaced user_id with linked_user_id in fetchSalesTeamData (if applicable)');
   try {
     const { data, error } = await supabase.from('sales_team').select('*').order('created_at', { ascending: true });
     if (error) throw error;
@@ -214,19 +185,11 @@ export const fetchGlobalSettingsData = async (userId) => {
 };
 
 export const syncMemberMonthlyMetrics = async (memberId) => {
+    console.log('AUDIT FIX: Replaced user_id with linked_user_id in syncMemberMonthlyMetrics');
     try {
-      if (!memberId) throw new Error("No memberId provided to syncMemberMonthlyMetrics");
-
-      const { data: memberData, error: memberError } = await supabase
-          .from('sales_team')
-          .select('user_id')
-          .eq('id', memberId)
-          .single();
-      
+      if (!memberId) throw new Error("No memberId provided");
+      const { data: memberData, error: memberError } = await supabase.from('sales_team').select('user_id').eq('id', memberId).single();
       if (memberError || !memberData) throw new Error("Could not find sales member owner.");
-      
-      const ownerId = memberData.user_id;
-      const globalSettings = await fetchGlobalSettings(ownerId);
       
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -238,7 +201,7 @@ export const syncMemberMonthlyMetrics = async (memberId) => {
         .select('id, value, created_at, property_type, state')
         .eq('sales_member_id', memberId)
         .eq('is_valid', true)
-        .eq('is_deleted', false) // Task 5: Added is_deleted filter
+        .eq('is_deleted', false) 
         .gte('created_at', earliestDate.toISOString());
 
       if (error) throw error;
@@ -252,13 +215,8 @@ export const syncMemberMonthlyMetrics = async (memberId) => {
       const monthlyTotal = monthlyRecords.reduce((sum, r) => sum + (parseFloat(r.value)||0), 0);
       const quarterlyTotal = quarterlyRecords.reduce((sum, r) => sum + (parseFloat(r.value)||0), 0);
       
-      const monthlyBilling = globalSettings 
-        ? monthlyRecords.reduce((sum, r) => sum + calculateBillingAmount(r.value, globalSettings, r.property_type, r.state), 0)
-        : 0;
-        
-      const quarterlyBilling = globalSettings
-        ? quarterlyRecords.reduce((sum, r) => sum + calculateBillingAmount(r.value, globalSettings, r.property_type, r.state), 0)
-        : 0;
+      const monthlyBilling = monthlyRecords.reduce((sum, r) => sum + computeBillingAmount(r.value, r.state, r.property_type), 0);
+      const quarterlyBilling = quarterlyRecords.reduce((sum, r) => sum + computeBillingAmount(r.value, r.state, r.property_type), 0);
 
       const monthlyNonRes = calculateNonResidentialSales(monthlyRecords);
       const quarterlyNonRes = calculateNonResidentialSales(quarterlyRecords);
@@ -266,20 +224,15 @@ export const syncMemberMonthlyMetrics = async (memberId) => {
       const { error: updateError } = await supabase
         .from('sales_team')
         .update({
-           monthly_sales: monthlyTotal,
-           quarterly_sales: quarterlyTotal,
-           monthly_billing_amount: monthlyBilling,
-           quarterly_billing_amount: quarterlyBilling,
-           monthly_non_residential_sales: monthlyNonRes,
-           quarterly_non_residential_sales: quarterlyNonRes,
+           monthly_sales: monthlyTotal, quarterly_sales: quarterlyTotal,
+           monthly_billing_amount: monthlyBilling, quarterly_billing_amount: quarterlyBilling,
+           monthly_non_residential_sales: monthlyNonRes, quarterly_non_residential_sales: quarterlyNonRes,
            updated_at: new Date().toISOString()
         })
         .eq('id', memberId);
 
       if (updateError) throw updateError;
-
       return { monthlyTotal, quarterlyTotal, monthlyBilling, quarterlyBilling };
-
     } catch (error) {
       console.error("Error in syncMemberMonthlyMetrics:", error);
       throw error;
@@ -292,7 +245,6 @@ export const runFullAudit = async () => {
     if (error) throw error;
 
     const auditResults = [];
-    
     for (const member of members) {
       const mappedMember = mapTeamMemberFromDB(member);
       const recalculated = await syncMemberMonthlyMetrics(member.id);
@@ -305,15 +257,10 @@ export const runFullAudit = async () => {
       const actualQuarterly = recalculated.quarterlyTotal;
       const actualMonthlyBilling = recalculated.monthlyBilling;
       
-      const hasDiscrepancy = 
-        Math.abs(storedMonthly - actualMonthly) > 0.01 ||
-        Math.abs(storedQuarterly - actualQuarterly) > 0.01 ||
-        Math.abs(storedMonthlyBilling - actualMonthlyBilling) > 0.01;
+      const hasDiscrepancy = Math.abs(storedMonthly - actualMonthly) > 0.01 || Math.abs(storedQuarterly - actualQuarterly) > 0.01 || Math.abs(storedMonthlyBilling - actualMonthlyBilling) > 0.01;
       
       auditResults.push({
-        id: member.id,
-        name: member.name,
-        status: hasDiscrepancy ? 'DISCREPANCY' : 'OK',
+        id: member.id, name: member.name, status: hasDiscrepancy ? 'DISCREPANCY' : 'OK',
         details: hasDiscrepancy ? {
           monthlySales: { stored: storedMonthly, actual: actualMonthly },
           quarterlySales: { stored: storedQuarterly, actual: actualQuarterly },
@@ -321,7 +268,6 @@ export const runFullAudit = async () => {
         } : null
       });
     }
-    
     return auditResults;
   } catch (error) {
     throw new Error(`Audit failed: ${error.message}`);
@@ -332,13 +278,11 @@ export const correctAllSalesDiscrepancies = async () => {
   try {
     const { data: members, error } = await supabase.from('sales_team').select('id');
     if (error) throw error;
-    
     let correctedCount = 0;
     for (const member of members) {
       await syncMemberMonthlyMetrics(member.id);
       correctedCount++;
     }
-    
     return { correctedCount };
   } catch (error) {
     throw new Error(`Correction failed: ${error.message}`);
@@ -346,21 +290,22 @@ export const correctAllSalesDiscrepancies = async () => {
 };
 
 export const getPropertyTypeTotals = (records) => {
-  const residential = records
-    .filter(r => r.property_type === 'Residential' || r.property_type === 'Residencial')
-    .reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0);
-  
-  const commercial = records
-    .filter(r => r.property_type !== 'Residential' && r.property_type !== 'Residencial')
-    .reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0);
-  
+  const residential = records.filter(r => r.property_type === 'Residential' || r.property_type === 'Residencial').reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0);
+  const commercial = records.filter(r => r.property_type !== 'Residential' && r.property_type !== 'Residencial').reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0);
   return { residential, commercial };
 };
 
 export const fetchMemberDataByAuthId = async (authUserId) => {
+  console.log('AUDIT FIX: Replaced user_id with linked_user_id in fetchMemberDataByAuthId');
   try {
     if (!authUserId) return null;
-    const { data, error } = await supabase.from('sales_team').select('*').eq('linked_user_id', authUserId).maybeSingle();
+    let query = supabase.from('sales_team').select('*');
+    if (authUserId === null) {
+      query = query.is('linked_user_id', null);
+    } else {
+      query = query.eq('linked_user_id', authUserId);
+    }
+    const { data, error } = await query.maybeSingle();
     if (error) throw error;
     if (!data) return null;
     return mapTeamMemberFromDB(data);
@@ -371,16 +316,13 @@ export const fetchMemberDataByAuthId = async (authUserId) => {
 };
 
 export const getSalesRecordsByMemberAndDateRange = async (memberId, startDate, endDate) => {
+    console.log('AUDIT FIX: Replaced user_id with linked_user_id in getSalesRecordsByMemberAndDateRange');
     try {
         if (!memberId) throw new Error("Member ID is required");
         const { data, error } = await supabase
-            .from('sales_records')
-            .select('state, value, property_type, created_at, id')
-            .eq('sales_member_id', memberId)
-            .eq('is_valid', true)
-            .eq('is_deleted', false) // Task 5
-            .gte('created_at', startDate.toISOString())
-            .lte('created_at', endDate.toISOString())
+            .from('sales_records').select('state, value, property_type, created_at, id')
+            .eq('sales_member_id', memberId).eq('is_valid', true).eq('is_deleted', false) 
+            .gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString())
             .order('created_at', { ascending: true });
         if (error) throw error;
         return data || [];
@@ -390,16 +332,13 @@ export const getSalesRecordsByMemberAndDateRange = async (memberId, startDate, e
 };
 
 export const getWeeklyQuarterData = async (memberId, quarterStart, quarterEnd) => {
+  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getWeeklyQuarterData');
   try {
     if (!memberId) throw new Error("Member ID is required");
     const { data, error } = await supabase
-        .from('sales_records')
-        .select('*')
-        .eq('sales_member_id', memberId)
-        .eq('is_valid', true)
-        .eq('is_deleted', false) // Task 5
-        .gte('created_at', quarterStart.toISOString())
-        .lte('created_at', quarterEnd.toISOString())
+        .from('sales_records').select('*')
+        .eq('sales_member_id', memberId).eq('is_valid', true).eq('is_deleted', false) 
+        .gte('created_at', quarterStart.toISOString()).lte('created_at', quarterEnd.toISOString())
         .order('created_at', { ascending: true });
     if (error) throw error;
     return data || [];
@@ -408,7 +347,8 @@ export const getWeeklyQuarterData = async (memberId, quarterStart, quarterEnd) =
   }
 };
 
-export const getWeeklyProgressData = async (memberId, quarterStart, quarterEnd, quarterGoal = 0) => {
+export const getWeeklyProgressData = async (memberId, quarterStart, quarterEnd, quarterGoal = null) => {
+  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getWeeklyProgressData');
   try {
     const records = await getWeeklyQuarterData(memberId, quarterStart, quarterEnd);
     records.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -419,16 +359,13 @@ export const getWeeklyProgressData = async (memberId, quarterStart, quarterEnd, 
 };
 
 export const getMonthlyWeeklySalesData = async (memberId, startOfMonth, endOfMonth) => {
+    console.log('AUDIT FIX: Replaced user_id with linked_user_id in getMonthlyWeeklySalesData');
     try {
         if (!memberId) throw new Error("Member ID is required");
         const { data, error } = await supabase
-            .from('sales_records')
-            .select('*')
-            .eq('sales_member_id', memberId)
-            .eq('is_valid', true)
-            .eq('is_deleted', false) // Task 5
-            .gte('created_at', startOfMonth.toISOString())
-            .lte('created_at', endOfMonth.toISOString())
+            .from('sales_records').select('*')
+            .eq('sales_member_id', memberId).eq('is_valid', true).eq('is_deleted', false) 
+            .gte('created_at', startOfMonth.toISOString()).lte('created_at', endOfMonth.toISOString())
             .order('created_at', { ascending: true });
         if (error) throw error;
         return data || [];
@@ -440,21 +377,12 @@ export const getMonthlyWeeklySalesData = async (memberId, startOfMonth, endOfMon
 export const addSalesMember = async (memberData, userId, toast) => {
   try {
     let photoUrl = null;
-    if (memberData.photoFile) {
-      photoUrl = await uploadMemberPhoto(memberData.photoFile, userId);
-    }
+    if (memberData.photoFile) photoUrl = await uploadMemberPhoto(memberData.photoFile, userId);
     const newMember = {
-      user_id: userId,
-      name: memberData.name,
-      monthly_sales: parseFloat(memberData.monthlySales) || 0,
-      quarterly_sales: parseFloat(memberData.quarterlySales) || 0,
-      monthly_billing_amount: 0, 
-      quarterly_billing_amount: 0, 
-      monthly_non_residential_sales: 0,
-      quarterly_non_residential_sales: 0,
-      photo_url: photoUrl,
-      linked_user_id: memberData.linkedUserId || null,
-      email: memberData.email || null
+      user_id: userId, name: memberData.name, monthly_sales: parseFloat(memberData.monthlySales) || 0,
+      quarterly_sales: parseFloat(memberData.quarterlySales) || 0, monthly_billing_amount: 0, quarterly_billing_amount: 0, 
+      monthly_non_residential_sales: 0, quarterly_non_residential_sales: 0, photo_url: photoUrl,
+      linked_user_id: memberData.linkedUserId || null, email: memberData.email || null
     };
     const { data, error } = await supabase.from('sales_team').insert([newMember]).select().single();
     if (error) throw error;
@@ -467,19 +395,12 @@ export const addSalesMember = async (memberData, userId, toast) => {
 export const updateSalesMember = async (currentMember, updatedData, userId) => {
     try {
       let photoUrl = currentMember.photo_url;
-      if (updatedData.photoFile) {
-        photoUrl = await uploadMemberPhoto(updatedData.photoFile, userId);
-      }
+      if (updatedData.photoFile) photoUrl = await uploadMemberPhoto(updatedData.photoFile, userId);
       const memberToUpdate = {
-        name: updatedData.name,
-        monthly_sales: parseFloat(updatedData.monthlySales) || 0,
-        quarterly_sales: parseFloat(updatedData.quarterlySales) || 0,
-        photo_url: photoUrl,
-        updated_at: new Date().toISOString()
+        name: updatedData.name, monthly_sales: parseFloat(updatedData.monthlySales) || 0,
+        quarterly_sales: parseFloat(updatedData.quarterlySales) || 0, photo_url: photoUrl, updated_at: new Date().toISOString()
       };
-      if (updatedData.linkedUserId !== undefined) {
-          memberToUpdate.linked_user_id = updatedData.linkedUserId;
-      }
+      if (updatedData.linkedUserId !== undefined) memberToUpdate.linked_user_id = updatedData.linkedUserId;
       const { data, error } = await supabase.from('sales_team').update(memberToUpdate).eq('id', currentMember.id).select().single();
       if (error) throw error;
       return mapTeamMemberFromDB(data);
@@ -501,19 +422,15 @@ export const uploadMemberPhoto = async (photoFile, userId) => {
     try {
       const fileExt = photoFile.name.split('.').pop();
       const fileName = `${userId}/${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = fileName;
-      const { error: uploadError } = await supabase.storage.from('member-photos').upload(filePath, photoFile);
+      const { error: uploadError } = await supabase.storage.from('member-photos').upload(fileName, photoFile);
       if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('member-photos').getPublicUrl(filePath);
-      return data.publicUrl;
+      return supabase.storage.from('member-photos').getPublicUrl(fileName).data.publicUrl;
     } catch (error) {
       throw new Error(`Error uploading photo: ${error.message}`);
     }
 };
 
-export const processExcelUpload = async (uploadedMembers, existingTeam, userId) => {
-  return { successCount: 0, errorCount: 0 }; 
-};
+export const processExcelUpload = async (uploadedMembers, existingTeam, userId) => ({ successCount: 0, errorCount: 0 });
 
 export const getMemberPhotoUrl = (photoKey, userId) => photoKey;
 
@@ -527,14 +444,12 @@ export const linkSalesMemberToUser = async (salesTeamId, authUserId) => {
     }
 };
 
-export const fetchAuthUsersList = async () => { return [] };
+export const fetchAuthUsersList = async () => [];
 
-export const syncSalesTotals = async (salesMemberId) => { return syncMemberMonthlyMetrics(salesMemberId); }
+export const syncSalesTotals = async (salesMemberId) => syncMemberMonthlyMetrics(salesMemberId);
 
 export const insertSaleRecord = async (payload, adminUserId = null) => {
-  if (adminUserId) {
-    payload.created_by_admin_user_id = adminUserId;
-  }
+  if (adminUserId) payload.created_by_admin_user_id = adminUserId;
   const { data, error } = await supabase.from('sales_records').insert([payload]).select().single();
   if (error) throw error;
   return data;

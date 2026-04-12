@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
@@ -9,8 +10,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { LogIn, Briefcase, AlertTriangle } from "lucide-react";
 
 const LoginPage = ({ onLoginSuccess }) => {
-  const [email, setEmail] = useState("commercial"); 
-  const [password, setPassword] = useState("123commercial");
+  const [email, setEmail] = useState(""); 
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { signIn } = useAuth();
@@ -19,23 +20,14 @@ const LoginPage = ({ onLoginSuccess }) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Support both simplified user/pass input AND full email input
-    let loginEmail = email;
-    if (email.toLowerCase() === "commercial") {
-      loginEmail = "commercial@example.com";
-    }
-
     try {
-      const { data, error } = await signIn(loginEmail, password);
+      const { data, error } = await signIn(email, password);
 
       if (error) {
-        // Error is already toasted in context, but we can log it
         console.error("Login failed:", error);
       } else if (data?.user && data?.session) {
-        // Explicitly check for session to ensure auth is valid
         onLoginSuccess(data.user);
       } else {
-        // Handle edge case where no error but no session (e.g. email not confirmed if configured)
         toast({
           title: "Login Incomplete",
           description: "Could not establish a valid session. Please try again.",
@@ -75,13 +67,14 @@ const LoginPage = ({ onLoginSuccess }) => {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-8 bg-white">
-            <form onSubmit={handleLogin} className="space-y-6">
+            <form onSubmit={handleLogin} className="space-y-6" autoComplete="off">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-gray-700 font-medium">Username or Email</Label>
                 <Input
                   id="email"
+                  name="email"
                   type="text" 
-                  placeholder="commercial"
+                  placeholder="Email o usuario"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -93,8 +86,9 @@ const LoginPage = ({ onLoginSuccess }) => {
                 <Label htmlFor="password" className="text-gray-700 font-medium">Password</Label>
                 <Input
                   id="password"
+                  name="password"
                   type="password"
-                  placeholder="Your password"
+                  placeholder="Contraseña"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -111,7 +105,6 @@ const LoginPage = ({ onLoginSuccess }) => {
               </Button>
             </form>
             <div className="mt-6 text-xs text-center text-gray-500">
-              <p>Default User: <span className="font-semibold">commercial</span> | Password: <span className="font-semibold">123commercial</span></p>
               <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-blue-700 flex items-start justify-center gap-2">
                 <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                 <span>
