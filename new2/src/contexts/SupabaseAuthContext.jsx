@@ -132,7 +132,7 @@ export const AuthProvider = ({ children }) => {
       console.log("Local state cleared. Redirecting to login.");
       
       // 5. Redirect using window.location to ensure complete unmount
-      window.location.href = '/';
+      window.location.replace(`${import.meta.env.BASE_URL}#/`);
     }
   }, []);
 

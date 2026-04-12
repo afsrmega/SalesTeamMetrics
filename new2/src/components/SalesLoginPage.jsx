@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { LogIn, UserCircle2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const SalesLoginPage = () => {
   const [email, setEmail] = useState("");
@@ -102,7 +102,7 @@ const SalesLoginPage = () => {
           </CardContent>
         </Card>
         <div className="text-center mt-6">
-            <a href="/" className="text-sm text-gray-500 hover:text-gray-800 underline">¿Eres Administrador? Ingresa aquí</a>
+            <Link to="/" className="text-sm text-gray-500 hover:text-gray-800 underline">¿Eres Administrador? Ingresa aquí</Link>
         </div>
       </motion.div>
     </div>

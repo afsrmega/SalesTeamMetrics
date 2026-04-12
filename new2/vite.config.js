@@ -278,6 +278,7 @@ logger.error = (msg, options) => {
 }
 
 export default defineConfig({
+	base: isDev ? '/' : '/SalesTeamMetrics/',
 	customLogger: logger,
 	plugins: [
 		...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin(), selectionModePlugin()] : []),
