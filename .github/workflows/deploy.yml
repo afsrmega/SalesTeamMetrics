@@ -23,7 +23,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: new
+        working-directory: new2
 
     steps:
       - name: Checkout
@@ -46,7 +46,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./new/dist
+          path: ./new2/dist
 
       - name: Deploy to GitHub Pages
         id: deployment
