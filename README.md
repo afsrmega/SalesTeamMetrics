@@ -8,6 +8,11 @@ User: admin@example.com
 Pwd: test
 
 
+Ingreso como miembro: 
+
+usertest@example.com
+pswd: Test
+
 
 # Horizons Sales Metrics App
 
