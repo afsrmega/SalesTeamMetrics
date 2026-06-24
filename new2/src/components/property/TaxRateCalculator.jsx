@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useToast } from "@/components/ui/use-toast";
 import { extractTaxDataFromPdf } from "@/lib/pdfExtractor";
 import TaxRateChart from "@/components/property/TaxRateChart";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 
 const TaxRateResultDisplay = ({ result }) => {
   if (!result) return null;
@@ -51,14 +52,14 @@ const TaxRateResultDisplay = ({ result }) => {
 
 const TaxRateCalculator = forwardRef(({ disabled }, ref) => {
   const { toast } = useToast();
-  const [gba, setGba] = useState("");
-  const [currentValue2024, setCurrentValue2024] = useState("");
-  const [comp1SqFt, setComp1SqFt] = useState("");
-  const [comp2SqFt, setComp2SqFt] = useState("");
-  const [comp3SqFt, setComp3SqFt] = useState("");
-  const [estimatedOverpayment, setEstimatedOverpayment] = useState("");
-  const [calculationResult, setCalculationResult] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [gba, setGba] = useLocalStorageState("property-tools:tax-rate-1comp:gba", "");
+const [currentValue2024, setCurrentValue2024] = useLocalStorageState("property-tools:tax-rate-1comp:currentValue2024", "");
+const [comp1SqFt, setComp1SqFt] = useLocalStorageState("property-tools:tax-rate-1comp:comp1SqFt", "");
+const [comp2SqFt, setComp2SqFt] = useLocalStorageState("property-tools:tax-rate-1comp:comp2SqFt", "");
+const [comp3SqFt, setComp3SqFt] = useLocalStorageState("property-tools:tax-rate-1comp:comp3SqFt", "");
+const [estimatedOverpayment, setEstimatedOverpayment] = useLocalStorageState("property-tools:tax-rate-1comp:estimatedOverpayment", "");
+const [calculationResult, setCalculationResult] = useState(null);
+const [isModalOpen, setIsModalOpen] = useState(false);
   const fileInputRef = useRef(null);
 
   const formatCurrency = (value) => `${parseFloat(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

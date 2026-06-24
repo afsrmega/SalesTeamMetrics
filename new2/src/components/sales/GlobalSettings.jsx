@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getGoalsByPeriod, saveGoalsByPeriod } from '@/lib/goalsService';

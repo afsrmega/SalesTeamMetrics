@@ -34,6 +34,39 @@ export const updateClientWithHistory = async (clientId, updates, effectiveAt, no
   return data;
 };
 
+export const updateClientSalesProtocol = async (clientId, checklistData) => {
+  const allComplete = checklistData.spartaxx_created && 
+                      checklistData.scanning_completed && 
+                      checklistData.notes_added && 
+                      checklistData.docs_requested;
+                      
+  const payload = {
+    sales_protocol_spartaxx_created: checklistData.spartaxx_created,
+    sales_protocol_scanning_completed: checklistData.scanning_completed,
+    sales_protocol_notes_added: checklistData.notes_added,
+    sales_protocol_docs_requested: checklistData.docs_requested,
+    sales_protocol_updated_at: new Date().toISOString(),
+    sales_protocol_completed_at: allComplete ? new Date().toISOString() : null,
+  };
+
+  const { data, error } = await supabase.from('clients').update(payload).eq('id', clientId);
+  if (error) throw error;
+  
+  // Get current user to log history
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData?.user) {
+    await supabase.from('client_history').insert({
+      client_id: clientId,
+      changed_by: userData.user.id,
+      effective_at: new Date().toISOString(),
+      changes: { action: 'sales_protocol_updated', payload },
+      note: "Sales protocol checklist updated"
+    });
+  }
+  
+  return data;
+};
+
 export const getClientHistory = async (clientId) => {
   const { data, error } = await supabase
     .from('client_history')

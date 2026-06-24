@@ -1,15 +1,24 @@
+
 import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, DollarSign, ImagePlus, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { User, DollarSign, ImagePlus, Trash2, Calendar } from "lucide-react";
 
 const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUrl }) => {
-  const [editedMember, setEditedMember] = useState({ name: "", monthlySales: "", quarterlySales: "" });
+  const [editedMember, setEditedMember] = useState({ 
+    name: "", 
+    monthlySales: "", 
+    quarterlySales: "",
+    is_new_member: false,
+    new_member_start_date: ""
+  });
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (member) {
@@ -17,15 +26,22 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
         name: member.name || "",
         monthlySales: member.monthlySales || "",
         quarterlySales: member.quarterlySales || "",
+        is_new_member: member.is_new_member || false,
+        new_member_start_date: member.new_member_start_date || ""
       });
       setPhotoPreview(member.photo_url || currentPhotoUrl || null); 
       setPhotoFile(null);
+      setError(null);
     }
   }, [member, isOpen, currentPhotoUrl]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setEditedMember(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleCheckboxChange = (checked) => {
+    setEditedMember(prev => ({ ...prev, is_new_member: checked }));
   };
 
   const handlePhotoChange = (e) => {
@@ -42,7 +58,19 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
   };
 
   const handleSave = () => {
-    onSave({ ...editedMember, photoFile, photoUrl: photoPreview }); 
+    if (editedMember.is_new_member && !editedMember.new_member_start_date) {
+      setError("Start date is required for new members");
+      return;
+    }
+    setError(null);
+    
+    // Normalize new_member_start_date to ensure it's never an empty string
+    onSave({ 
+      ...editedMember, 
+      photoFile, 
+      photoUrl: photoPreview,
+      new_member_start_date: editedMember.is_new_member ? (editedMember.new_member_start_date || null) : null
+    }); 
     onOpenChange(false);
   };
 
@@ -133,6 +161,37 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
                 />
               </div>
             </div>
+          </div>
+
+          <div className="space-y-3 pt-4 pb-2 border-t border-gray-100">
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="edit-is_new_member" 
+                checked={editedMember.is_new_member} 
+                onCheckedChange={handleCheckboxChange} 
+              />
+              <Label htmlFor="edit-is_new_member" className="font-medium cursor-pointer text-gray-700">
+                Is this a new member? (Onboarding goals)
+              </Label>
+            </div>
+            
+            {editedMember.is_new_member && (
+              <div className="space-y-2 pl-6 animate-in slide-in-from-top-2">
+                <Label htmlFor="edit-new_member_start_date" className="text-sm text-gray-600">Onboarding Start Date *</Label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="edit-new_member_start_date"
+                    name="new_member_start_date"
+                    type="date"
+                    value={editedMember.new_member_start_date || ""}
+                    onChange={handleInputChange}
+                    className="pl-10 h-9 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                  />
+                </div>
+                {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+              </div>
+            )}
           </div>
         </div>
 

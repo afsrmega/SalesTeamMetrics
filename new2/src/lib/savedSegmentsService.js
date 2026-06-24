@@ -1,4 +1,3 @@
-
 import { supabase } from './customSupabaseClient';
 
 export const getSavedSegments = async (userId, scope) => {

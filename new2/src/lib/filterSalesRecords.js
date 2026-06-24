@@ -2,11 +2,6 @@
 import { startOfDay, endOfDay, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { getCustomQuarter } from './salesUtils';
 
-/**
- * Applies the residential toggle to a list of records.
- * If includeResidential is true, returns all.
- * If false, filters out 'residential' or 'residencial'.
- */
 export const applyResidentialToggle = (records, includeResidential) => {
   if (!Array.isArray(records)) return [];
   if (includeResidential) return records;
@@ -17,10 +12,7 @@ export const applyResidentialToggle = (records, includeResidential) => {
   });
 };
 
-/**
- * Calculates the exact start and end Date objects for a given mode.
- */
-export const calculateDateRange = (mode, customStart, customEnd) => {
+export const calculateDateRange = (mode, customStart, customEnd, quarterDefinitions) => {
   const today = new Date();
   
   switch (mode) {
@@ -35,7 +27,7 @@ export const calculateDateRange = (mode, customStart, customEnd) => {
     case 'mes':
       return { start: startOfMonth(today), end: endOfMonth(today) };
     case 'trimestre': {
-      const { quarterStart, quarterEnd } = getCustomQuarter(today);
+      const { quarterStart, quarterEnd } = getCustomQuarter(today, quarterDefinitions);
       return { start: quarterStart, end: quarterEnd };
     }
     case 'custom':
@@ -48,17 +40,12 @@ export const calculateDateRange = (mode, customStart, customEnd) => {
   }
 };
 
-/**
- * Filters sales records based on the given date range and residential toggle.
- */
 export const filterSalesRecords = (records, dateRange, includeResidential) => {
-  console.log('AUDIT FIX: filterSalesRecords now uses member_id for filtering');
   if (!Array.isArray(records)) return [];
 
   const toggledRecords = applyResidentialToggle(records, includeResidential);
 
   return toggledRecords.filter(record => {
-    // Date range filter
     if (dateRange && dateRange.start && dateRange.end) {
       const recordDate = new Date(record.created_at);
       if (recordDate < dateRange.start || recordDate > dateRange.end) {

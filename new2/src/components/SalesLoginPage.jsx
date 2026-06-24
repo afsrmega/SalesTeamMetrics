@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
@@ -8,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { LogIn, UserCircle2 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 const SalesLoginPage = () => {
   const [email, setEmail] = useState("");
@@ -102,7 +101,7 @@ const SalesLoginPage = () => {
           </CardContent>
         </Card>
         <div className="text-center mt-6">
-            <Link to="/" className="text-sm text-gray-500 hover:text-gray-800 underline">¿Eres Administrador? Ingresa aquí</Link>
+            <a href="/" className="text-sm text-gray-500 hover:text-gray-800 underline">¿Eres Administrador? Ingresa aquí</a>
         </div>
       </motion.div>
     </div>

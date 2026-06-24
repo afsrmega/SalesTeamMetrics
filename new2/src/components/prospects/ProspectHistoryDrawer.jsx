@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getProspectHistory } from '@/lib/prospectsService';

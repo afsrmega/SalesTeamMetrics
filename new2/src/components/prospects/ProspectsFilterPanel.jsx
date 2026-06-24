@@ -59,12 +59,12 @@ const ProspectsFilterPanel = ({
     });
   };
 
-  const togglePropertyType = (type) => {
-    const current = filters.propertyType || [];
+  const toggleProspectType = (type) => {
+    const current = filters.prospectType || [];
     const updated = current.includes(type)
       ? current.filter(t => t !== type)
       : [...current, type];
-    handleChange('propertyType', updated);
+    handleChange('prospectType', updated);
   };
 
   const handleReset = () => {
@@ -222,28 +222,37 @@ const ProspectsFilterPanel = ({
                 />
                 <Label htmlFor="filter-portfolio">Tiene Portafolio</Label>
               </div>
-
+              
               <div className="space-y-2 mt-4">
-                <Label className="mr-4">Tipo de Propiedad:</Label>
+                <Label className="mr-4">Tipo de Prospecto:</Label>
                 <div className="flex items-center space-x-4 inline-flex">
                   <div className="flex items-center space-x-2">
                     <Checkbox 
-                      id="type-res" 
-                      checked={(filters.propertyType || []).includes('Residential')}
-                      onCheckedChange={() => togglePropertyType('Residential')}
+                      id="ptype2-com" 
+                      checked={(filters.prospectType || []).includes('Commercial')}
+                      onCheckedChange={() => toggleProspectType('Commercial')}
                     />
-                    <Label htmlFor="type-res">Residencial</Label>
+                    <Label htmlFor="ptype2-com">Commercial</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox 
-                      id="type-com" 
-                      checked={(filters.propertyType || []).includes('Commercial')}
-                      onCheckedChange={() => togglePropertyType('Commercial')}
+                      id="ptype2-res" 
+                      checked={(filters.prospectType || []).includes('Residential')}
+                      onCheckedChange={() => toggleProspectType('Residential')}
                     />
-                    <Label htmlFor="type-com">Comercial</Label>
+                    <Label htmlFor="ptype2-res">Residential</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="ptype2-bpp" 
+                      checked={(filters.prospectType || []).includes('BPP')}
+                      onCheckedChange={() => toggleProspectType('BPP')}
+                    />
+                    <Label htmlFor="ptype2-bpp">BPP</Label>
                   </div>
                 </div>
               </div>
+
             </div>
 
             {/* CRM Tags Filter */}

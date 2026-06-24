@@ -1,4 +1,3 @@
-
 export const getTodayRange = () => {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());

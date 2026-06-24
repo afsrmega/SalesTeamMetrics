@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from 'lucide-react';
+import { normalizeProspectType } from '@/lib/utils';
 
 const parsePropertyValue = (val) => {
   if (val === null || val === undefined || val === '') return null;
@@ -31,7 +32,7 @@ const EditProspectModal = ({ isOpen, onClose, onSave, prospect, isLoading }) => 
       setFormData({
         prospect_name: prospect.prospect_name || '',
         source_lead: prospect.source_lead || '',
-        property_type: prospect.property_type || '',
+        prospect_type: prospect.prospect_type ? normalizeProspectType(prospect.prospect_type) : 'commercial',
         has_portfolio: prospect.has_portfolio || false,
         estimated_property_value: prospect.estimated_property_value || '',
         qualification: prospect.qualification || 0,
@@ -72,7 +73,7 @@ const EditProspectModal = ({ isOpen, onClose, onSave, prospect, isLoading }) => 
     const payload = {
       prospect_name: formData.prospect_name.trim(),
       source_lead: formData.source_lead,
-      property_type: formData.property_type,
+      prospect_type: normalizeProspectType(formData.prospect_type),
       estimated_property_value: parsedPropertyValue,
       qualification: Number(formData.qualification),
       last_contact_date: formData.last_contact_date || null,
@@ -120,16 +121,19 @@ const EditProspectModal = ({ isOpen, onClose, onSave, prospect, isLoading }) => 
                 onChange={(e) => setFormData({...formData, source_lead: e.target.value})} 
               />
             </div>
+            
             <div className="space-y-2">
-              <Label>Tipo de Propiedad</Label>
-              <Select value={formData.property_type || ''} onValueChange={(v) => setFormData({...formData, property_type: v})}>
+              <Label>Tipo de Prospecto</Label>
+              <Select value={formData.prospect_type || 'commercial'} onValueChange={(v) => setFormData({...formData, prospect_type: v})}>
                 <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Residential">Residencial</SelectItem>
-                  <SelectItem value="Commercial">Comercial</SelectItem>
+                  <SelectItem value="commercial">Commercial</SelectItem>
+                  <SelectItem value="residential">Residential</SelectItem>
+                  <SelectItem value="bpp">BPP</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            
             <div className="space-y-2">
               <Label>Valor Estimado</Label>
               <Input 

@@ -66,6 +66,12 @@
   }
 }
 
+@layer components {
+  .badge-archived {
+    @apply inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 border border-gray-200 tracking-wide uppercase;
+  }
+}
+
 @layer utilities {
   .dropdown-scroll {
     max-height: 320px;

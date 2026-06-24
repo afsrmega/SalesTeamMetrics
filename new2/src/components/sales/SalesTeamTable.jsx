@@ -1,16 +1,15 @@
-
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.jsx";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Trash2, Edit3, User, Percent, List } from "lucide-react";
+import { Trash2, Edit3, User, Percent, List, KeyRound } from "lucide-react";
 import { formatCurrency, getCustomQuarter } from "@/lib/salesUtils";
 import MemberSalesDialog from "@/components/sales/MemberSalesDialog";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMember, disabled, effectiveMonthGoals, effectiveQuarterGoals, periodMode }) => {
+const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMember, onSetPassword, disabled, effectiveMonthGoals, effectiveQuarterGoals, periodMode }) => {
   const [selectedMemberForSales, setSelectedMemberForSales] = useState(null);
   const [isSalesModalOpen, setIsSalesModalOpen] = useState(false);
   const [quarterLabel, setQuarterLabel] = useState("");
@@ -139,13 +138,18 @@ const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMembe
                     </TableCell>
                     <TableCell className="text-center">
                        <div className="flex justify-center space-x-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleViewSales(member)} className="text-indigo-600 h-8 w-8">
+                        <Button variant="ghost" size="icon" onClick={() => handleViewSales(member)} title="Ver ventas" className="text-indigo-600 h-8 w-8">
                            <List className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => onEditMember(member)} className="text-blue-600 h-8 w-8">
+                        {onSetPassword && (
+                          <Button variant="ghost" size="icon" onClick={() => onSetPassword(member)} title="Establecer contraseña" className="text-amber-600 h-8 w-8">
+                             <KeyRound className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => onEditMember(member)} title="Editar" className="text-blue-600 h-8 w-8">
                             <Edit3 className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => onDeleteMember(member.id)} className="text-red-600 h-8 w-8">
+                        <Button variant="ghost" size="icon" onClick={() => onDeleteMember(member.id)} title="Eliminar" className="text-red-600 h-8 w-8">
                             <Trash2 className="h-4 w-4" />
                         </Button>
                        </div>

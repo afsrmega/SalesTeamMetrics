@@ -1,10 +1,10 @@
 
 import { supabase } from './customSupabaseClient';
 import { resolveGoalForMemberPeriod } from './commissionEngine';
+import { getEffectiveGoalForMember, getEffectiveQuarterGoalForMember } from './onboardingHelpers';
 
 export const validateAdminOnly = async (userId) => {
   console.log("🔒 validating admin access... User ID:", String(userId));
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in validateAdminOnly');
   if (!userId) throw new Error("Solo el administrador puede modificar metas");
 
   let query = supabase.from('sales_team').select('role, is_admin');
@@ -26,28 +26,50 @@ export const validateAdminOnly = async (userId) => {
 
 export const getEffectiveGoal = async (periodType, periodKey) => {
   console.log(`🔍 [getEffectiveGoal] Delegating to commissionEngine for ${periodType} ${periodKey}`);
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getEffectiveGoal');
   const result = await resolveGoalForMemberPeriod(null, periodType, periodKey, null);
   return {
     teamGoal: result.teamGoal,
-    individualGoal: result.goal,
+    individualGoal: result.goal, // Note: This doesn't have member info to adjust, it's just the base goal
     source: result.source
   };
 };
 
 export const getEffectiveMemberGoal = async (memberId, periodType, periodKey) => {
   console.log(`🔍 [getEffectiveMemberGoal] Delegating to commissionEngine for member: ${memberId}`);
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getEffectiveMemberGoal');
   const result = await resolveGoalForMemberPeriod(memberId, periodType, periodKey, null);
+  
+  let finalGoal = result.goal;
+
+  // Retrieve member details to apply onboarding multipliers if applicable
+  if (memberId && result.goal > 0) {
+    const { data: memberData, error } = await supabase
+      .from('sales_team')
+      .select('is_new_member, new_member_start_date')
+      .or(`id.eq.${memberId},linked_user_id.eq.${memberId}`)
+      .maybeSingle();
+      
+    if (error) {
+      console.error('Error fetching member:', error);
+    } else if (memberData?.is_new_member && memberData?.new_member_start_date) {
+      if (periodType === 'month') {
+        finalGoal = getEffectiveGoalForMember(memberData, result.goal, 'month', periodKey);
+        console.log(`[getEffectiveMemberGoal] Month Mode - BaseGoal: ${result.goal}, Multiplier: ${finalGoal / result.goal}, EffectiveGoal: ${finalGoal}`);
+      } else if (periodType === 'quarter') {
+        // Assume result.goal is the total quarter goal, meaning monthly is result.goal / 3
+        finalGoal = getEffectiveQuarterGoalForMember(memberData, result.goal / 3, periodKey);
+        console.log(`[getEffectiveMemberGoal] Quarter Mode - BaseGoal: ${result.goal}, EffectiveGoal: ${finalGoal}`);
+      }
+    }
+  }
+
   return { 
-    goal: result.goal > 0 ? result.goal : null, 
+    goal: finalGoal > 0 ? finalGoal : null, 
     source: result.source, 
     overrideEnabled: result.overrideEnabled 
   };
 };
 
 export const getGoalsByPeriod = async (periodType, periodKey, globalSettings) => {
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getGoalsByPeriod');
   const result = await getEffectiveGoal(periodType, periodKey);
   return {
     team_goal: result.teamGoal,
@@ -57,7 +79,6 @@ export const getGoalsByPeriod = async (periodType, periodKey, globalSettings) =>
 };
 
 export const saveGoalsByPeriod = async (periodType, periodKey, teamGoal, individualGoal, userId) => {
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in saveGoalsByPeriod');
   try {
     await validateAdminOnly(userId);
     const payload = {
@@ -95,7 +116,6 @@ export const saveGoalsByPeriod = async (periodType, periodKey, teamGoal, individ
 };
 
 export const getEffectiveMonthlyGoalForMember = async (memberId, selectedMonthKey) => {
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getEffectiveMonthlyGoalForMember');
   const res = await getEffectiveMemberGoal(memberId, 'month', selectedMonthKey);
   return res.goal;
 };
@@ -108,14 +128,13 @@ export async function resolveQuarterGoalForMember({
   supabaseClient = supabase
 }) {
   console.log(`[resolveQuarterGoalForMember] Resolving for memberId: ${memberId}, quarter: ${selectedQuarter}`);
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in resolveQuarterGoalForMember');
+
+  let baseGoal = 0;
 
   if (overrideEnabled && memberQuarterlyQuota > 0) {
     console.log(`✅ Using member override: ${memberQuarterlyQuota}`);
-    return Number(memberQuarterlyQuota);
-  }
-
-  if (selectedQuarter) {
+    baseGoal = Number(memberQuarterlyQuota);
+  } else if (selectedQuarter) {
     const { data: periodData, error: periodError } = await supabaseClient
       .from('goals_by_period')
       .select('individual_goal')
@@ -125,24 +144,40 @@ export async function resolveQuarterGoalForMember({
 
     if (!periodError && periodData?.individual_goal > 0) {
       console.log(`✅ Using goals_by_period: ${periodData.individual_goal}`);
-      return Number(periodData.individual_goal);
+      baseGoal = Number(periodData.individual_goal);
+    } else {
+      const { data: globalData, error: globalError } = await supabaseClient
+        .from('global_settings')
+        .select('individual_quarterly_target')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!globalError && globalData?.individual_quarterly_target > 0) {
+        console.log(`✅ Using global_settings fallback: ${globalData.individual_quarterly_target}`);
+        baseGoal = Number(globalData.individual_quarterly_target);
+      }
     }
   }
 
-  const { data: globalData, error: globalError } = await supabaseClient
-    .from('global_settings')
-    .select('individual_quarterly_target')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!globalError && globalData?.individual_quarterly_target > 0) {
-    console.log(`✅ Using global_settings fallback: ${globalData.individual_quarterly_target}`);
-    return Number(globalData.individual_quarterly_target);
+  if (baseGoal > 0 && memberId) {
+    const { data: memberData, error } = await supabaseClient
+      .from('sales_team')
+      .select('is_new_member, new_member_start_date')
+      .or(`id.eq.${memberId},linked_user_id.eq.${memberId}`)
+      .maybeSingle();
+      
+    if (error) {
+      console.error('Error fetching member:', error);
+    } else if (memberData?.is_new_member && memberData?.new_member_start_date) {
+      const effectiveGoal = getEffectiveQuarterGoalForMember(memberData, baseGoal / 3, selectedQuarter || 'current');
+      console.log(`[resolveQuarterGoalForMember] Onboarding applied. BaseGoal: ${baseGoal}, EffectiveGoal: ${effectiveGoal}`);
+      return effectiveGoal;
+    }
   }
 
-  console.log(`⚠️ No quarter goal found`);
-  return 0;
+  console.log(`⚠️ No onboarding applied. Calculated baseGoal: ${baseGoal}`);
+  return baseGoal;
 }
 
 export async function resolveMemberDashboardGoal({
@@ -152,17 +187,18 @@ export async function resolveMemberDashboardGoal({
   supabaseClient = supabase
 }) {
   console.log(`[resolveMemberDashboardGoal] Start: memberId=${memberRow?.id}, periodKey=${periodKey}, periodMode=${periodMode}`);
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in resolveMemberDashboardGoal');
+
+  let baseGoal = 0;
 
   if (memberRow?.monthly_quota_override_enabled) {
     const val = periodMode === 'month' ? (memberRow.monthly_quota || memberRow.monthlyQuota) : (memberRow.quarterly_quota || memberRow.quarterlyQuota);
     if (val > 0) {
       console.log(`✅ Using member override for ${periodMode}: ${val}`);
-      return Number(val);
+      baseGoal = Number(val);
     }
   }
 
-  if (periodKey) {
+  if (baseGoal === 0 && periodKey) {
     const { data: periodData, error: periodError } = await supabaseClient
       .from('goals_by_period')
       .select('individual_goal')
@@ -174,30 +210,45 @@ export async function resolveMemberDashboardGoal({
       console.error(`[resolveMemberDashboardGoal] Error querying goals_by_period:`, periodError);
     } else if (periodData?.individual_goal > 0) {
       console.log(`✅ Using goals_by_period for ${periodMode}: ${periodData.individual_goal}`);
-      return Number(periodData.individual_goal);
+      baseGoal = Number(periodData.individual_goal);
     }
   }
 
-  const { data: globalData, error: globalError } = await supabaseClient
-    .from('global_settings')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  if (baseGoal === 0) {
+    const { data: globalData, error: globalError } = await supabaseClient
+      .from('global_settings')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (globalError) {
-    console.error(`[resolveMemberDashboardGoal] Error querying global_settings:`, globalError);
-  } else if (globalData) {
-    const val = periodMode === 'month' 
-      ? (globalData.individual_monthly_commission_threshold || globalData.individual_monthly_target) 
-      : globalData.individual_quarterly_target;
-      
-    if (val > 0) {
-      console.log(`✅ Using global_settings fallback for ${periodMode}: ${val}`);
-      return Number(val);
+    if (globalError) {
+      console.error(`[resolveMemberDashboardGoal] Error querying global_settings:`, globalError);
+    } else if (globalData) {
+      const val = periodMode === 'month' 
+        ? (globalData.individual_monthly_commission_threshold || globalData.individual_monthly_target) 
+        : globalData.individual_quarterly_target;
+        
+      if (val > 0) {
+        console.log(`✅ Using global_settings fallback for ${periodMode}: ${val}`);
+        baseGoal = Number(val);
+      }
     }
   }
 
-  console.log(`⚠️ No goal found for ${periodMode}, returning 0`);
-  return 0;
+  let effectiveGoal = baseGoal;
+  
+  if (baseGoal > 0 && memberRow?.is_new_member && memberRow?.new_member_start_date) {
+    if (periodMode === 'month') {
+      effectiveGoal = getEffectiveGoalForMember(memberRow, baseGoal, 'month', periodKey);
+      console.log(`[resolveMemberDashboardGoal] Onboarding applied (Month). BaseGoal: ${baseGoal}, Multiplier: ${effectiveGoal / baseGoal}, EffectiveGoal: ${effectiveGoal}`);
+    } else {
+      effectiveGoal = getEffectiveQuarterGoalForMember(memberRow, baseGoal / 3, periodKey);
+      console.log(`[resolveMemberDashboardGoal] Onboarding applied (Quarter). BaseGoal: ${baseGoal}, EffectiveGoal: ${effectiveGoal}`);
+    }
+  } else {
+    console.log(`⚠️ Returning standard computed baseGoal for ${periodMode}: ${baseGoal}`);
+  }
+
+  return effectiveGoal;
 }

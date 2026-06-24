@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -5,7 +6,7 @@ import { CalendarDays, Clock } from 'lucide-react';
 import { Progress } from "@/components/ui/progress";
 import { getCustomQuarter } from '@/lib/salesUtils';
 
-const TimeProgressChart = () => {
+const TimeProgressChart = ({ quarterDefinitions }) => {
   const [progress, setProgress] = useState({
     month: { passed: 0, total: 30, percent: 0, remaining: 0, name: "" },
     quarter: { passed: 0, total: 90, percent: 0, remaining: 0, label: "" }
@@ -22,7 +23,7 @@ const TimeProgressChart = () => {
       const monthName = now.toLocaleString('es-ES', { month: 'long' });
 
       // Custom Quarter
-      const { quarterStart, quarterEnd, quarterLabel } = getCustomQuarter(now);
+      const { quarterStart, quarterEnd, quarterLabel } = getCustomQuarter(now, quarterDefinitions);
       const totalQuarterTime = quarterEnd - quarterStart;
       const elapsedQuarterTime = now - quarterStart;
       
@@ -53,7 +54,7 @@ const TimeProgressChart = () => {
     const intervalId = setInterval(updateProgress, 1000 * 60 * 60);
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [quarterDefinitions]);
 
   return (
     <Card className="bg-gradient-to-br from-teal-500 to-emerald-700 text-white shadow-xl hover:shadow-2xl transition-shadow h-full">

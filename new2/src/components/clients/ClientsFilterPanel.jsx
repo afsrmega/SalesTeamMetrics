@@ -8,6 +8,8 @@ import { ChevronDown, ChevronUp, Filter, X, Save, Bookmark } from 'lucide-react'
 import TagsFilterCRM from '@/components/common/TagsFilterCRM';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import SavedSegmentsList from '@/components/common/SavedSegmentsList';
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const ClientsFilterPanel = ({ 
   filters, 
@@ -114,6 +116,34 @@ const ClientsFilterPanel = ({
 
         <CollapsibleContent>
           <CardContent className="pt-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 border-b pb-4">
+              <div className="space-y-2">
+                <Label>Converted Via</Label>
+                <Select value={filters.conversionChannel || 'all'} onValueChange={(v) => handleChange('conversionChannel', v)}>
+                  <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="phone">Phone</SelectItem>
+                    <SelectItem value="both">Email + Phone</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Senior/Manager Involved</Label>
+                <Select value={filters.seniorManagerInvolved || 'all'} onValueChange={(v) => handleChange('seniorManagerInvolved', v)}>
+                  <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="yes">Yes</SelectItem>
+                    <SelectItem value="no">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             {/* CRM Tags Filter */}
             <div className="mt-2">
               <TagsFilterCRM 

@@ -3,20 +3,33 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
-export const useClientsData = () => {
+export const useClientsData = (filters = {}) => {
   const { user, isSalesMember, isAdmin } = useAuth();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const conversionChannel = filters.conversionChannel;
+  const seniorManagerInvolved = filters.seniorManagerInvolved;
 
   const fetchClients = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
       let query = supabase.from('clients').select('*');
+      
       if (isSalesMember && !isAdmin) {
         query = query.eq('owner_user_id', user.id);
       }
+      
+      if (conversionChannel && conversionChannel !== 'all') {
+        query = query.eq('conversion_channel', conversionChannel);
+      }
+      
+      if (seniorManagerInvolved && seniorManagerInvolved !== 'all') {
+        query = query.eq('senior_manager_involved', seniorManagerInvolved === 'yes');
+      }
+
       const { data, error: fetchErr } = await query;
       if (fetchErr) throw fetchErr;
       setClients(data || []);
@@ -25,7 +38,7 @@ export const useClientsData = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, isSalesMember, isAdmin]);
+  }, [user, isSalesMember, isAdmin, conversionChannel, seniorManagerInvolved]);
 
   useEffect(() => {
     fetchClients();

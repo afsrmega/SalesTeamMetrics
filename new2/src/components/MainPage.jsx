@@ -1,10 +1,9 @@
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import SalesMetrics from "@/components/SalesMetrics";
+import SalesMetrics from "@/components/sales/SalesMetrics";
 import PropertyCalculator from "@/components/PropertyCalculator";
 import PhoneIdentifier from "@/components/phone/PhoneIdentifier";
-import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import LoginPage from "@/components/LoginPage"; 
 import { Button } from "@/components/ui/button";
@@ -30,15 +29,6 @@ const MainPage = () => {
     }
   });
 
-  const handleSignOut = useCallback(async () => {
-    const { error } = await signOut();
-    if (error) {
-      toast({ title: "Error al Cerrar Sesión", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Sesión Cerrada", description: "Has cerrado sesión exitosamente." });
-    }
-  }, [signOut, toast]);
-
   if (loading) {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-gradient-to-br from-gray-100 via-gray-200 to-gray-300 text-gray-700">
@@ -56,8 +46,6 @@ const MainPage = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-800">
-      <Header user={user} onLogout={handleSignOut} />
-      
       <main className="flex-grow container mx-auto px-4 py-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="mb-10 text-center">
           <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-3">Commercial Team Metrics</h1>
@@ -79,19 +67,19 @@ const MainPage = () => {
             </TabsList>
           </div>
 
-          <motion.div key={activeTab} initial={{ opacity: 0, x: 0 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 260, damping: 20 }} className="w-full">
-            <TabsContent value="sales" className="mt-0">
-              {user ? <SalesMetrics /> : <AuthErrorFallback />}
-            </TabsContent>
-            
-            <TabsContent value="propertyTools" className="mt-0"> 
-              {user ? <PropertyCalculator /> : <AuthErrorFallback />}
-            </TabsContent>
+          <div className="w-full">
+  <TabsContent value="sales" forceMount className="mt-0">
+    {user ? <SalesMetrics /> : <AuthErrorFallback />}
+  </TabsContent>
+  
+  <TabsContent value="propertyTools" forceMount className="mt-0"> 
+    {user ? <PropertyCalculator /> : <AuthErrorFallback />}
+  </TabsContent>
 
-            <TabsContent value="phoneIdentifier" className="mt-0">
-              {user ? <PhoneIdentifier /> : <AuthErrorFallback />}
-            </TabsContent>
-          </motion.div>
+  <TabsContent value="phoneIdentifier" forceMount className="mt-0">
+    {user ? <PhoneIdentifier /> : <AuthErrorFallback />}
+  </TabsContent>
+</div>
         </Tabs>
       </main>
       <Footer />

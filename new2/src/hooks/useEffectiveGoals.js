@@ -18,23 +18,27 @@ export function useEffectiveGoals(periodType, periodKey, memberId = null) {
     
     setLoading(true);
     try {
+      // 1. Resolve base goal FIRST from goals_by_period or global_settings
       const { teamGoal, individualGoal, source } = await getEffectiveGoal(periodType, periodKey);
       
       let memberGoal = individualGoal;
       let memberSource = source;
       let overrideEnabled = false;
 
+      // 2. Apply onboarding multiplier AFTER resolving base goal (happens inside getEffectiveMemberGoal)
       if (memberId) {
         const memberResult = await getEffectiveMemberGoal(memberId, periodType, periodKey);
         memberGoal = memberResult.goal;
         memberSource = memberResult.source;
         overrideEnabled = memberResult.overrideEnabled;
+        
+        console.log(`[useEffectiveGoals] Period: ${periodKey} | Base Goal: ${individualGoal} | Effective Goal: ${memberGoal} | Multiplier: ${memberGoal && individualGoal ? (memberGoal / individualGoal).toFixed(2) : 1}`);
       }
 
       setGoals({
         teamGoal,
-        individualGoal,
-        memberGoal,
+        individualGoal, // The raw base goal
+        memberGoal, // The effective goal (after onboarding multipliers)
         source,
         memberSource,
         overrideEnabled

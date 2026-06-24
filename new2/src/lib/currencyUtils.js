@@ -1,4 +1,3 @@
-
 export const convertUsdToCop = (usdAmount, conversionRate) => {
   if (usdAmount === null || usdAmount === undefined || isNaN(usdAmount) || usdAmount < 0) return 0;
   if (conversionRate === null || conversionRate === undefined || isNaN(conversionRate) || conversionRate <= 0) return 0;

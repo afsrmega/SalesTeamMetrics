@@ -1,8 +1,9 @@
+
 import { DEFAULT_RATES } from './globalSettingsService';
-import { getQuarterDateRange } from './getQuarterDateRange';
+import { getQuarterDateRange, getCustomQuarter } from './getQuarterDateRange';
 import { selectTierRate } from './commissionCalculationUtils';
 
-export { getQuarterDateRange };
+export { getQuarterDateRange, getCustomQuarter };
 
 export const formatCurrency = (value) => {
   const num = parseFloat(value);
@@ -114,80 +115,45 @@ export const calculateNonResidentialSales = (salesRecords) => {
   }, 0);
 };
 
-export const getCustomQuarter = (date = new Date()) => {
-  const year = date.getFullYear();
-
-  // Check current year's quarters (1-4)
-  for (let q = 1; q <= 4; q++) {
-    const { start, end } = getQuarterDateRange(year, q);
-    if (date >= start && date <= end) {
-      return _formatQuarterResult(start, end, q, year);
-    }
-  }
-
-  // Check next year's Q1 (since dates in late Dec belong to next year's Q1)
-  const nextYearQ1 = getQuarterDateRange(year + 1, 1);
-  if (date >= nextYearQ1.start && date <= nextYearQ1.end) {
-    return _formatQuarterResult(nextYearQ1.start, nextYearQ1.end, 1, year + 1);
-  }
-
-  // Fallback
-  const { start, end } = getQuarterDateRange(year, 1);
-  return _formatQuarterResult(start, end, 1, year);
-};
-
-const _formatQuarterResult = (start, end, q, year) => {
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const rangeLabel = `${monthNames[start.getMonth()]} ${start.getDate()} - ${monthNames[end.getMonth()]} ${end.getDate()}`;
-  return {
-    quarter: q,
-    year: year,
-    quarterStart: start,
-    quarterEnd: end,
-    quarterLabel: `Q${q} FY${year}`,
-    quarterRangeLabel: rangeLabel
-  };
-};
-
 export const calculateAmountRemaining = (currentValue, goal) => {
   const diff = parseFloat(goal) - parseFloat(currentValue);
   return diff > 0 ? diff : 0;
 };
 
-export const calculateDaysInPeriod = (period) => {
+export const calculateDaysInPeriod = (period, quarterDefinitions) => {
   const now = new Date();
   if (period === 'month') {
     return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   } else if (period === 'quarter') {
-    const { quarterStart, quarterEnd } = getCustomQuarter(now);
+    const { quarterStart, quarterEnd } = getCustomQuarter(now, quarterDefinitions);
     const diffTime = Math.abs(quarterEnd - quarterStart);
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
   return 30; // fallback
 };
 
-export const calculateDaysElapsed = (period) => {
+export const calculateDaysElapsed = (period, quarterDefinitions) => {
   const now = new Date();
   if (period === 'month') {
     return now.getDate();
   } else if (period === 'quarter') {
-    const { quarterStart } = getCustomQuarter(now);
+    const { quarterStart } = getCustomQuarter(now, quarterDefinitions);
     const diffTime = now - quarterStart;
     return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
   }
   return 15; // fallback
 };
 
-export const calculateRunRateStatus = (currentValue, goal, period) => {
+export const calculateRunRateStatus = (currentValue, goal, period, quarterDefinitions) => {
   const val = parseFloat(currentValue) || 0;
   const tar = parseFloat(goal) || 1;
   const currentPercent = val / tar;
   
-  const elapsed = calculateDaysElapsed(period);
-  const total = calculateDaysInPeriod(period);
+  const elapsed = calculateDaysElapsed(period, quarterDefinitions);
+  const total = calculateDaysInPeriod(period, quarterDefinitions);
   const expectedPercent = elapsed / total;
   
   if (currentPercent >= expectedPercent) return "Adelantado";
-  if (currentPercent >= expectedPercent - 0.1) return "En línea"; // 10% margin
+  if (currentPercent >= expectedPercent - 0.1) return "En línea"; 
   return "Atrasado";
 };

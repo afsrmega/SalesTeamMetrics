@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { motion } from "framer-motion";
 import { FileDown, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -157,17 +156,17 @@ const PropertyCalculator = () => {
         onDelete={onValuationDeleted}
       />
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
-        <TaxRateCalculator ref={taxCalcRef} disabled={!user} />
-      </motion.div>
+      <div>
+  <TaxRateCalculator ref={taxCalcRef} disabled={!user} />
+</div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.3 }} className="mt-12">
-        <TaxRateCalculatorTwoComps ref={taxCalcTwoCompsRef} disabled={!user} />
-      </motion.div>
+<div className="mt-12">
+  <TaxRateCalculatorTwoComps ref={taxCalcTwoCompsRef} disabled={!user} />
+</div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.4 }} className="mt-12">
-        <TaxRateCalculatorThreeComps ref={taxCalcThreeCompsRef} disabled={!user} />
-      </motion.div>
+<div className="mt-12">
+  <TaxRateCalculatorThreeComps ref={taxCalcThreeCompsRef} disabled={!user} />
+</div>
     </div>
   );
 };

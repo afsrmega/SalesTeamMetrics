@@ -1,7 +1,7 @@
-
 import React, { useState, useMemo, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import GlobalSettings from "@/components/sales/GlobalSettings";
+import QuarterSettingsDialog from "@/components/sales/QuarterSettingsDialog";
 import AddMemberForm from "@/components/sales/AddMemberForm";
 import SalesTeamTable from "@/components/sales/SalesTeamTable";
 import SalesTeamTableQuarterly from "@/components/sales/SalesTeamTableQuarterly";
@@ -22,33 +22,41 @@ import QuarterGoalDistributionChart from "@/components/sales/QuarterGoalDistribu
 import AddSaleForm from "@/components/sales/AddSaleForm";
 import SalesFiltersBlock from "@/components/sales/SalesFiltersBlock";
 import MemberOverridesManager from "@/components/sales/MemberOverridesManager";
+import ArchiveMemberModal from "@/components/sales/ArchiveMemberModal";
+import ArchivedMembersTable from "@/components/sales/ArchivedMembersTable";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { getGoalsByPeriod } from "@/lib/goalsService";
 import { 
   calculateSalesStats, 
   enrichSalesTeamData, 
-  addSalesMember, 
   updateSalesMember, 
-  deleteSalesMemberById, 
   processExcelUpload,
-  syncMemberMonthlyMetrics 
+  syncMemberMonthlyMetrics,
+  archiveSalesMember,
+  restoreSalesMember
 } from "@/lib/salesService";
 import { useRealTimeSalesData } from "@/hooks/useRealTimeSalesData"; 
 import { generatePowerPointReport } from "@/lib/powerPointGenerator";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { FileDown, Link as LinkIcon, AlertTriangle, RefreshCw, BarChart2, Presentation, Loader2, Calculator, Settings } from "lucide-react";
+import { FileDown, Link as LinkIcon, AlertTriangle, RefreshCw, BarChart2, Presentation, Loader2, Calculator, Settings, KeyRound, Users } from "lucide-react";
 import { exportToExcelWithCharts } from "@/lib/exportToExcelWithCharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { calculateCommissionWithTiers, calculateBillingAmount, formatCurrency, getBillingRate, getCustomQuarter, getQuarterDateRange } from "@/lib/salesUtils";
+import { calculateBillingAmount, formatCurrency, getCustomQuarter, getQuarterDateRange } from "@/lib/salesUtils";
 import { validateBillingRates } from "@/lib/validateBillingRates";
 import { useColorPreferences } from "@/hooks/useColorPreferences";
 import { calculateDateRange, filterSalesRecords } from "@/lib/filterSalesRecords";
 import { format } from "date-fns";
+import { supabase } from "@/lib/customSupabaseClient";
+import { getVisibleMembersForPeriod } from "@/lib/memberVisibilityUtils";
 
 function validateDate(date) {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
@@ -63,13 +71,16 @@ const safeFormat = (date, formatStr) => {
   return format(validDate, formatStr);
 };
 
+const isValidEmail = (email) => {
+  if (!email) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
 const SalesMetrics = () => {
-  console.log('AUDIT FIX: SalesMetrics now uses linked_user_id for member matching');
   const { toast } = useToast();
-  const { user, globalSettings, fetchSettings, isAdmin } = useAuth(); 
+  const { user, globalSettings, fetchSettings, updateGlobalSettings, isAdmin } = useAuth(); 
   useColorPreferences();
 
-  // Filters State & Persistence
   const [dateFilter, setDateFilter] = useState(() => {
     const saved = localStorage.getItem('adminDashboardFilters_date');
     return saved ? JSON.parse(saved) : { mode: 'reset', startDate: null, endDate: null };
@@ -79,10 +90,11 @@ const SalesMetrics = () => {
     return saved ? JSON.parse(saved) : false;
   });
 
-  // Period Selection State
   const [periodMode, setPeriodMode] = useState(() => localStorage.getItem('adminPeriodMode') || 'quarter');
   const [selectedQuarterKey, setSelectedQuarterKey] = useState(() => localStorage.getItem('adminSelectedQuarterKey') || 'current');
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => localStorage.getItem('adminSelectedMonthKey') || 'current');
+  //const [memberStatusFilter, setMemberStatusFilter] = useState('active');
+  const [memberStatusFilter, setMemberStatusFilter] = useState('period');
 
   const [effectiveMonthGoals, setEffectiveMonthGoals] = useState(null);
   const [effectiveQuarterGoals, setEffectiveQuarterGoals] = useState(null);
@@ -95,7 +107,19 @@ const SalesMetrics = () => {
     localStorage.setItem('adminSelectedMonthKey', selectedMonthKey);
   }, [dateFilter, includeResidential, periodMode, selectedQuarterKey, selectedMonthKey]);
 
-  const [newMember, setNewMember] = useState({ name: "", monthlySales: "", quarterlySales: "", photoFile: null, photoUrl: null });
+  // Add Member State
+  const [newMember, setNewMember] = useState({ 
+    name: "", 
+    email: "", 
+    is_new_member: false, 
+    new_member_start_date: "",
+    role: "member"
+  });
+  
+  // UI States
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState(null);
+  
   const [editingMember, setEditingMember] = useState(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
@@ -104,12 +128,76 @@ const SalesMetrics = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
 
+  // Archive Member Flow State
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
+  const [memberPendingArchive, setMemberPendingArchive] = useState(null);
+  const [isArchiving, setIsArchiving] = useState(false);
+
+  // --- SET PASSWORD MODAL STATE & HANDLERS ---
+  const [showSetPasswordModal, setShowSetPasswordModal] = useState(false);
+  const [selectedMemberForPassword, setSelectedMemberForPassword] = useState(null);
+  const [passwordFormData, setPasswordFormData] = useState({ password: '', confirmPassword: '' });
+  const [isSettingPassword, setIsSettingPassword] = useState(false);
+
+  const handleOpenSetPasswordModal = (member) => {
+    setSelectedMemberForPassword(member);
+    setPasswordFormData({ password: '', confirmPassword: '' });
+    setShowSetPasswordModal(true);
+  };
+
+  const handleCloseSetPasswordModal = () => {
+    setShowSetPasswordModal(false);
+    setSelectedMemberForPassword(null);
+    setPasswordFormData({ password: '', confirmPassword: '' });
+  };
+
+  const handleSetPassword = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    
+    const { password, confirmPassword } = passwordFormData;
+    
+    if (!password || password.length < 6) {
+      toast({ title: "Error", description: "La contraseña debe tener al menos 6 caracteres.", variant: "destructive" });
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      toast({ title: "Error", description: "Las contraseñas no coinciden.", variant: "destructive" });
+      return;
+    }
+    
+    setIsSettingPassword(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('set-member-password', {
+        body: {
+          memberId: selectedMemberForPassword.id,
+          newPassword: password
+        }
+      });
+      
+      if (error) throw new Error(error.message || "Error al invocar la función.");
+      if (data && data.error) throw new Error(data.error);
+      
+      toast({ title: "Éxito", description: "Contraseña temporal establecida correctamente." });
+      handleCloseSetPasswordModal();
+    } catch (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      console.error("Set password error:", error);
+    } finally {
+      setIsSettingPassword(false);
+    }
+  };
+  // -------------------------------------------
+
   const { 
     salesTeam: salesTeamRaw, 
     salesRecords,
     loading: isLoading, 
     refresh: refreshData 
   } = useRealTimeSalesData(user?.id);
+
+  const loadMembers = refreshData;
 
   const safeGlobalSettings = useMemo(() => {
     return globalSettings || {
@@ -125,13 +213,11 @@ const SalesMetrics = () => {
 
   const validation = useMemo(() => validateBillingRates(safeGlobalSettings), [safeGlobalSettings]);
 
-  // Apply Global Filters
-  const activeRange = useMemo(() => calculateDateRange(dateFilter.mode, dateFilter.startDate, dateFilter.endDate), [dateFilter]);
+  const activeRange = useMemo(() => calculateDateRange(dateFilter.mode, dateFilter.startDate, dateFilter.endDate, safeGlobalSettings.quarter_definitions), [dateFilter, safeGlobalSettings.quarter_definitions]);
   const isDateFiltered = dateFilter.mode !== 'reset';
   const filteredSalesRecordsFinal = useMemo(() => filterSalesRecords(salesRecords, activeRange, includeResidential), [salesRecords, activeRange, includeResidential]);
 
-  // Period Options Generators
-  const currentQInfo = useMemo(() => getCustomQuarter(new Date()), []);
+  const currentQInfo = useMemo(() => getCustomQuarter(new Date(), safeGlobalSettings.quarter_definitions), [safeGlobalSettings.quarter_definitions]);
   const currentMonthDate = useMemo(() => new Date(), []);
 
   const quarterOptions = useMemo(() => {
@@ -158,7 +244,6 @@ const SalesMetrics = () => {
     return opts;
   }, [currentMonthDate]);
 
-  // Active Period Dates Calculation
   const { activeQuarterStart, activeQuarterEnd, activeQuarterLabel, computedQuarterKey } = useMemo(() => {
     let qStart, qEnd, qLabel, cKey;
     try {
@@ -167,7 +252,7 @@ const SalesMetrics = () => {
       const year = parseInt(y, 10);
       const quarterNumber = parseInt(q, 10);
       if (isNaN(year) || isNaN(quarterNumber)) throw new Error('Invalid quarter key format');
-      const quarterData = getQuarterDateRange(year, quarterNumber);
+      const quarterData = getQuarterDateRange(year, quarterNumber, safeGlobalSettings.quarter_definitions);
       qStart = validateDate(quarterData.start);
       qEnd = validateDate(quarterData.end);
       qLabel = `Q${quarterNumber} FY${year}`;
@@ -180,7 +265,7 @@ const SalesMetrics = () => {
       cKey = `FY${currentQInfo.year}-Q${currentQInfo.quarter}`;
     }
     return { activeQuarterStart: qStart, activeQuarterEnd: qEnd, activeQuarterLabel: qLabel, computedQuarterKey: cKey };
-  }, [selectedQuarterKey, currentQInfo]);
+  }, [selectedQuarterKey, currentQInfo, safeGlobalSettings.quarter_definitions]);
 
   const { activeMonthStart, activeMonthEnd, activeMonthLabel, computedMonthKey } = useMemo(() => {
     let mStart, mEnd, mLabel, cKey;
@@ -218,14 +303,10 @@ const SalesMetrics = () => {
 
   const fetchGoals = async () => {
     if (!safeGlobalSettings) return;
-    console.log('📊 [SalesMetrics] Fetching effective goals for both periods independently...');
-    
     const monthGoals = await getGoalsByPeriod('month', computedMonthKey, safeGlobalSettings);
-    console.log('📊 [SalesMetrics] (1) effectiveMonthGoals loaded:', JSON.stringify(monthGoals));
     setEffectiveMonthGoals(monthGoals);
     
     const quarterGoals = await getGoalsByPeriod('quarter', computedQuarterKey, safeGlobalSettings);
-    console.log('📊 [SalesMetrics] (2) effectiveQuarterGoals loaded:', JSON.stringify(quarterGoals));
     setEffectiveQuarterGoals(quarterGoals);
   };
 
@@ -236,11 +317,6 @@ const SalesMetrics = () => {
     return () => window.removeEventListener('goalsUpdated', handleUpdate);
   }, [computedMonthKey, computedQuarterKey, safeGlobalSettings]);
 
-  useEffect(() => {
-    console.log('📊 [SalesMetrics] (4) periodMode changed to:', String(periodMode));
-  }, [periodMode]);
-
-  // Override global settings with period goals for calculations
   const activeSettings = useMemo(() => {
     const settings = {
       ...safeGlobalSettings,
@@ -249,7 +325,6 @@ const SalesMetrics = () => {
       team_quarterly_target: effectiveQuarterGoals?.team_goal > 0 ? effectiveQuarterGoals.team_goal : safeGlobalSettings.team_quarterly_target,
       individual_quarterly_target: effectiveQuarterGoals?.individual_goal > 0 ? effectiveQuarterGoals.individual_goal : safeGlobalSettings.individual_quarterly_target,
     };
-    console.log('📊 [SalesMetrics] (3) activeSettings constructed with all four goal values:', JSON.stringify(settings));
     return settings;
   }, [safeGlobalSettings, effectiveMonthGoals, effectiveQuarterGoals]);
 
@@ -298,27 +373,50 @@ const SalesMetrics = () => {
     return enrichSalesTeamData(salesTeamLive, activeSettings);
   }, [salesTeamLive, activeSettings]);
 
+  const periodStart = periodMode === 'quarter' ? activeQuarterStart : activeMonthStart;
+  const periodEnd = periodMode === 'quarter' ? activeQuarterEnd : activeMonthEnd;
+
+  // Filter members dynamically based on their visibility in the selected period
+  const visibleEnrichedSalesTeam = useMemo(() => {
+    return getVisibleMembersForPeriod(enrichedSalesTeam, filteredSalesRecordsFinal, periodStart, periodEnd);
+  }, [enrichedSalesTeam, filteredSalesRecordsFinal, periodStart, periodEnd]);
+
+  // For Admin tables managing members
+  const adminFilteredSalesTeam = useMemo(() => {
+  if (memberStatusFilter === 'period') return visibleEnrichedSalesTeam;
+  if (memberStatusFilter === 'active') return enrichedSalesTeam.filter(m => m.is_archived !== true);
+  if (memberStatusFilter === 'archived') return enrichedSalesTeam.filter(m => m.is_archived === true);
+  return enrichedSalesTeam;
+}, [enrichedSalesTeam, visibleEnrichedSalesTeam, memberStatusFilter]);
+
   const teamStats = useMemo(() => {
-    return calculateSalesStats(enrichedSalesTeam, activeSettings);
-  }, [enrichedSalesTeam, activeSettings]);
+    return calculateSalesStats(visibleEnrichedSalesTeam, activeSettings);
+  }, [visibleEnrichedSalesTeam, activeSettings]);
 
   const comparisonData = useMemo(() => {
     let residential = 0;
     let commercial = 0;
+    let bpp = 0;
     const startD = periodMode === 'quarter' ? activeQuarterStart : activeMonthStart;
     const endD = periodMode === 'quarter' ? activeQuarterEnd : activeMonthEnd;
     
     filteredSalesRecordsFinal.forEach(r => {
       const recordDate = validateDate(new Date(r.created_at));
       if (!recordDate || recordDate < startD || recordDate > endD) return;
-      const type = (r.property_type || '').toLowerCase().trim();
-      if (type === 'residential' || type === 'residencial') {
-        residential += parseFloat(r.value) || 0;
+      
+      const type = (r.property_type || '').trim().toUpperCase();
+      const value = parseFloat(r.value) || 0;
+      
+      if (type.includes('RESIDENCIAL') || type === 'RESIDENTIAL') {
+        residential += value;
+      } else if (type === 'BPP' || type.includes('BUSINESS PERSONAL PROPERTY')) {
+        bpp += value;
       } else {
-        commercial += parseFloat(r.value) || 0;
+        commercial += value;
       }
     });
-    return { residential, commercial };
+    
+    return { residential, commercial, bpp };
   }, [filteredSalesRecordsFinal, periodMode, activeQuarterStart, activeQuarterEnd, activeMonthStart, activeMonthEnd]);
 
   const weeklyData = useMemo(() => {
@@ -366,31 +464,99 @@ const SalesMetrics = () => {
     setNewMember(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleNewMemberPhotoChange = (photoFile) => {
-    setNewMember(prev => ({ ...prev, photoFile: photoFile, photoUrl: photoFile ? URL.createObjectURL(photoFile) : null }));
+  const resetAddMemberForm = () => {
+    setNewMember({
+      name: "",
+      email: "",
+      is_new_member: false,
+      new_member_start_date: "",
+      role: "member"
+    });
   };
 
-  const handleAddMember = async (memberDataOverride = {}) => {
+  const handleAddMemberSubmit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    
     if (!user) {
       toast({ title: "Acción Requerida", description: "Inicia sesión para añadir miembros.", variant: "default" });
       return;
     }
+    
+    if (!newMember.name || !newMember.email) {
+      toast({ title: "Error", description: "El nombre y el correo electrónico son obligatorios.", variant: "destructive" });
+      return;
+    }
+
+    if (!isValidEmail(newMember.email)) {
+      toast({ title: "Error", description: "El formato del correo electrónico es inválido.", variant: "destructive" });
+      return;
+    }
+
     try {
-      const dataToSave = { ...newMember, ...memberDataOverride };
-      await addSalesMember(dataToSave, user.id, toast);
-      setNewMember({ name: "", monthlySales: "", quarterlySales: "", photoFile: null, photoUrl: null });
+      const { data, error } = await supabase.functions.invoke('create-member', {
+        body: {
+          name: newMember.name,
+          email: newMember.email,
+          isNewMember: newMember.is_new_member,
+          newMemberStartDate: newMember.new_member_start_date,
+          role: newMember.role || "member"
+        }
+      });
+
+      if (error) {
+        throw new Error(error.message || "Error de red al invocar la función.");
+      }
+
+      if (data && data.error) {
+        toast({ title: "Error al Añadir Miembro", description: data.error, variant: "destructive" });
+        return;
+      }
+      
+      if (data && data.success) {
+        toast({ title: "Éxito", description: "El miembro ha sido creado exitosamente." });
+        loadMembers();
+        resetAddMemberForm();
+        setShowAddMemberModal(false);
+      }
     } catch (error) {
       toast({ title: "Error al Añadir Miembro", description: error.message, variant: "destructive" });
+      console.error(error);
     }
   };
 
-  const handleDeleteMember = async (id) => {
+  const handleDeleteMember = (memberId) => {
     if (!user) return;
+    const member = salesTeamRaw?.find(m => m.id === memberId);
+    if (member) {
+      setMemberPendingArchive(member);
+      setIsArchiveModalOpen(true);
+    }
+  };
+
+  const handleConfirmArchive = async ({ employment_end_date, archive_reason }) => {
+    if (!user || !memberPendingArchive) return;
+    setIsArchiving(true);
     try {
-      await deleteSalesMemberById(id, user.id, salesTeamRaw.find(m => m.id === id)?.photo_url);
-      toast({ title: "Miembro Eliminado", description: "El miembro ha sido eliminado." });
+      await archiveSalesMember(memberPendingArchive.id, employment_end_date, archive_reason, user.id);
+      toast({ title: "Miembro Archivado", description: "El miembro ha sido archivado exitosamente. Los datos históricos han sido conservados." });
+      loadMembers();
+      setIsArchiveModalOpen(false);
+      setMemberPendingArchive(null);
     } catch (error) {
-      toast({ title: "Error al Eliminar", description: error.message, variant: "destructive" });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  const handleRestoreMember = async (memberId) => {
+    if (!confirm("Are you sure you want to restore this member to the active team?")) return;
+    try {
+      await restoreSalesMember(memberId);
+      toast({ title: "Miembro Restaurado", description: "El miembro está nuevamente activo." });
+      loadMembers();
+    } catch (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   };
 
@@ -402,10 +568,11 @@ const SalesMetrics = () => {
   const handleSaveEditedMember = async (updatedMemberData) => {
     if (!user || !editingMember) return;
     try {
-      await updateSalesMember(editingMember, updatedMemberData, user.id, toast);
+      await updateSalesMember(editingMember, updatedMemberData, user.id);
       setIsEditDialogOpen(false);
       setEditingMember(null);
       toast({ title: "Miembro Actualizado", description: "La información ha sido actualizada." });
+      loadMembers();
     } catch (error) {
       toast({ title: "Error al Actualizar", description: error.message, variant: "destructive" });
     }
@@ -417,7 +584,7 @@ const SalesMetrics = () => {
       const { successCount, errorCount } = await processExcelUpload(uploadedMembers, salesTeamRaw, user.id);
       if (successCount > 0) {
         toast({ title: "Carga Completada", description: `${successCount} miembros procesados.` });
-        refreshData();
+        loadMembers();
       } else if (errorCount > 0) {
         toast({ title: "Error en Carga", description: "No se pudieron procesar los miembros.", variant: "destructive"});
       } else {
@@ -432,7 +599,7 @@ const SalesMetrics = () => {
     if (!user) return;
     setIsExporting(true);
     try {
-      await exportToExcelWithCharts(enrichedSalesTeam, activeSettings, filteredSalesRecordsFinal);
+      await exportToExcelWithCharts(visibleEnrichedSalesTeam, activeSettings, filteredSalesRecordsFinal);
       toast({ title: "Exportación Exitosa", description: "Se ha generado el reporte optimizado." });
     } catch (error) {
       toast({ title: "Error en Exportación", description: "No se pudo generar el reporte.", variant: "destructive" });
@@ -442,10 +609,10 @@ const SalesMetrics = () => {
   };
 
   const handleDownloadPPT = async () => {
-    if (!user || enrichedSalesTeam.length === 0) return;
+    if (!user || visibleEnrichedSalesTeam.length === 0) return;
     setIsGeneratingPPT(true);
     try {
-      await generatePowerPointReport(enrichedSalesTeam, activeSettings, weeklyData, teamStats);
+      await generatePowerPointReport(visibleEnrichedSalesTeam, activeSettings, weeklyData, teamStats);
       toast({ title: "Reporte Generado", description: "La presentación se ha descargado correctamente." });
     } catch (error) {
       toast({ title: "Error", description: "No se pudo generar el reporte PowerPoint.", variant: "destructive" });
@@ -462,7 +629,7 @@ const SalesMetrics = () => {
         await Promise.all(salesTeamRaw.map(async (member) => {
             try { await syncMemberMonthlyMetrics(member.id); successCount++; } catch (err) {}
         }));
-        await refreshData();
+        await loadMembers();
         toast({ title: "Sincronización Completada", description: `Se han actualizado ${successCount} miembros.` });
     } catch (error) {
         toast({ title: "Error", description: "Hubo un problema al sincronizar.", variant: "destructive" });
@@ -472,7 +639,6 @@ const SalesMetrics = () => {
   };
 
   const renderQuarterWeeklyProgressTable = () => {
-    console.log('📊 [SalesMetrics] Passing effectiveQuarterGoals to QuarterWeeklyProgressTable:', JSON.stringify(effectiveQuarterGoals));
     return (
       <QuarterWeeklyProgressTable 
         weeklyData={weeklyData} 
@@ -517,12 +683,22 @@ const SalesMetrics = () => {
       )}
 
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <GlobalSettings 
-          disabled={!user} 
-          periodMode={periodMode} 
-          periodKey={currentPeriodKey} 
-          periodLabel={currentPeriodLabel} 
-        />
+        <div className="flex items-center gap-2">
+          <GlobalSettings 
+            disabled={!user} 
+            periodMode={periodMode} 
+            periodKey={currentPeriodKey} 
+            periodLabel={currentPeriodLabel} 
+          />
+          {isAdmin && (
+            <QuarterSettingsDialog
+              disabled={!user}
+              globalSettings={globalSettings}
+              fetchSettings={fetchSettings}
+              updateGlobalSettings={updateGlobalSettings}
+            />
+          )}
+        </div>
         
         <div className="flex flex-wrap items-center gap-2 bg-white p-1.5 rounded-lg shadow-sm border border-gray-200">
             <Badge variant="outline" className="mr-1 bg-gray-50 border-gray-200 text-gray-600 font-medium">
@@ -593,10 +769,9 @@ const SalesMetrics = () => {
             <TabsTrigger value="progress" className="flex-1 sm:flex-none"><BarChart2 className="h-4 w-4 mr-2 hidden md:block" /> Progreso Trimestral</TabsTrigger>
             <TabsTrigger value="records" className="flex-1 sm:flex-none">Registro Histórico</TabsTrigger>
             <TabsTrigger value="overrides" className="flex-1 sm:flex-none"><Settings className="h-4 w-4 mr-2 hidden md:block" /> Config. Cuotas</TabsTrigger>
-            <TabsTrigger value="audit" className="flex-1 sm:flex-none"><AlertTriangle className="h-4 w-4 text-custom-accent mr-2 hidden md:block" /> Auditoría</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="dashboard" className="space-y-8 p-1">
+        <TabsContent value="dashboard" forceMount className="space-y-8 p-1">
             <section>
               <SummaryCards 
                 totalMonthlySales={teamStats.totalMonthlySales} 
@@ -606,17 +781,17 @@ const SalesMetrics = () => {
                 averageMonthlySales={teamStats.averageMonthlySales}
                 averageQuarterlySales={teamStats.averageQuarterlySales}
                 topPerformer={teamStats.topPerformerMonthly ? { name: teamStats.topPerformerMonthly.name, sales: parseFloat(teamStats.topPerformerMonthly.monthlySales) } : null}
-                salesTeamCount={enrichedSalesTeam.length}
+                salesTeamCount={visibleEnrichedSalesTeam.length}
                 teamMonthlyAchievement={teamStats.teamMonthlyAchievement}
               />
               <div className="mt-8">
-                <TimeProgressChart />
+                <TimeProgressChart quarterDefinitions={activeSettings.quarter_definitions} />
               </div>
             </section>
             
             <section>
               <TeamOverallProgressCharts
-                  salesTeam={enrichedSalesTeam}
+                  salesTeam={visibleEnrichedSalesTeam}
                   globalSettings={activeSettings}
                   totalMonthlySales={teamStats.totalMonthlySales}
                   totalQuarterlySales={teamStats.totalQuarterlySales}
@@ -625,29 +800,13 @@ const SalesMetrics = () => {
               />
             </section>
 
-             <section>
-              <TexasVsOutOfStateChart 
-                selectedMonth={activeMonthStart}
-                selectedQuarter={selectedQuarterKey}
-                periodMode={dateFilter.mode === 'reset' ? periodMode : 'custom'}
-                includeResidential={includeResidential}
-                customStartDate={dateFilter.startDate}
-                customEndDate={dateFilter.endDate}
-              />
-            </section>
-
-            <section>
-              <PropertyTypeComparisonChart comparisonData={comparisonData} />
-            </section>
-
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-1 space-y-8">
-                  <AddSaleForm mode="admin" salesTeam={enrichedSalesTeam} onSaleAdded={refreshData} />
+                  <AddSaleForm mode="admin" salesTeam={visibleEnrichedSalesTeam} onSaleAdded={refreshData} />
                   <AddMemberForm 
                       newMember={newMember}
                       onInputChange={handleInputChange}
-                      onAddMember={handleAddMember}
-                      onPhotoChange={handleNewMemberPhotoChange}
+                      onAddMember={handleAddMemberSubmit}
                       disabled={!user}
                   />
                   <ExcelUploader onFileUpload={handleFileUpload} disabled={!user} />
@@ -655,48 +814,82 @@ const SalesMetrics = () => {
                 </div>
                 
                 <div className="lg:col-span-2 space-y-8">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800">Gestión de Equipo</h3>
+                      <p className="text-sm text-gray-500">Administra los miembros y sus metas</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="whitespace-nowrap text-sm text-gray-600">Estado:</Label>
+                      <Select value={memberStatusFilter} onValueChange={setMemberStatusFilter}>
+                        <SelectTrigger className="w-[140px] h-9">
+                          <SelectValue placeholder="Estado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                         <SelectItem value="period">Período seleccionado</SelectItem>
+                           <SelectItem value="active">Activos</SelectItem>
+                           <SelectItem value="archived">Archivados</SelectItem>
+                            <SelectItem value="all">Todos</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
                   <SalesTeamTable 
-                      salesTeam={enrichedSalesTeam}
+                      salesTeam={adminFilteredSalesTeam}
                       globalSettings={activeSettings}
-                      onDeleteMember={handleDeleteMember}
+                      onDeleteMember={(id) => handleDeleteMember(id)}
                       onEditMember={handleOpenEditDialog}
+                      onSetPassword={handleOpenSetPasswordModal}
                       disabled={!user}
                       effectiveMonthGoals={effectiveMonthGoals}
                       effectiveQuarterGoals={effectiveQuarterGoals}
                       periodMode={periodMode}
                   />
                   <SalesTeamTableQuarterly 
-                      salesTeam={enrichedSalesTeam}
+                      salesTeam={adminFilteredSalesTeam}
                       globalSettings={activeSettings}
-                      onDeleteMember={handleDeleteMember}
+                      onDeleteMember={(id) => handleDeleteMember(id)}
                       onEditMember={handleOpenEditDialog}
+                      onSetPassword={handleOpenSetPasswordModal}
                       disabled={!user}
                       effectiveMonthGoals={effectiveMonthGoals}
                       effectiveQuarterGoals={effectiveQuarterGoals}
                       periodMode={periodMode}
                   />
+                  {memberStatusFilter === 'archived' && (
+                     <div className="mt-8">
+                       <h3 className="text-lg font-bold mb-4">Registro de Miembros Archivados</h3>
+                       <ArchivedMembersTable members={adminFilteredSalesTeam.filter(m => m.is_archived)} onRestore={handleRestoreMember} />
+                     </div>
+                  )}
                 </div>
             </section>
         </TabsContent>
 
-        <TabsContent value="progress" className="p-1 mt-6 space-y-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <TabsContent value="progress" forceMount className="p-1 mt-6 space-y-8">
+          <div className="grid grid-cols-1 gap-8">
             <QuarterlyTexasVsOutOfStateChart 
-              selectedQuarter={selectedQuarterKey} 
-              includeResidential={includeResidential} 
-            />
-            <QuarterGoalDistributionChart 
-              quarterGoal={parseFloat(activeSettings.team_quarterly_target) || 0} 
-            />
-          </div>
+                  selectedQuarter={selectedQuarterKey} 
+                  includeResidential={includeResidential} 
+               />
+               <QuarterGoalDistributionChart 
+                quarterGoal={parseFloat(activeSettings.team_quarterly_target) || 0} 
+                />
+               </div>
+
+                <section>
+                 <PropertyTypeComparisonChart comparisonData={comparisonData} />
+               </section>
+
           {renderQuarterWeeklyProgressTable()}
         </TabsContent>
 
-        <TabsContent value="records" className="p-1 mt-6">
+        <TabsContent value="records" forceMount className="p-1 mt-6">
              <AllSalesRecordsTable />
         </TabsContent>
 
-        <TabsContent value="overrides" className="p-1 mt-6">
+        <TabsContent value="overrides" forceMount className="p-1 mt-6">
           {isAdmin ? (
             <MemberOverridesManager />
           ) : (
@@ -708,7 +901,7 @@ const SalesMetrics = () => {
           )}
         </TabsContent>
 
-        <TabsContent value="audit" className="p-1 mt-6">
+        <TabsContent value="audit" forceMount className="p-1 mt-6">
              <AuditPanel />
         </TabsContent>
       </Tabs>
@@ -719,9 +912,21 @@ const SalesMetrics = () => {
           onOpenChange={setIsEditDialogOpen}
           member={editingMember}
           onSave={handleSaveEditedMember}
+          onSetPassword={handleOpenSetPasswordModal}
           currentPhotoUrl={editingMember.photo_url}
         />
       )}
+
+      <ArchiveMemberModal 
+        isOpen={isArchiveModalOpen}
+        onClose={() => {
+          setIsArchiveModalOpen(false);
+          setMemberPendingArchive(null);
+        }}
+        onArchive={handleConfirmArchive}
+        isProcessing={isArchiving}
+        memberName={memberPendingArchive?.name}
+      />
 
       <LinkUserDialog 
          isOpen={isLinkDialogOpen}
@@ -729,6 +934,80 @@ const SalesMetrics = () => {
          salesTeam={salesTeamRaw}
          onLinkSuccess={refreshData}
       />
+
+      <Dialog open={showSetPasswordModal} onOpenChange={setShowSetPasswordModal}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Establecer Contraseña Temporal</DialogTitle>
+            <DialogDescription>
+              Asigna una contraseña temporal para que el miembro pueda iniciar sesión en el dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Email del Miembro</Label>
+              <Input 
+                value={selectedMemberForPassword?.email || ''} 
+                disabled 
+                className="bg-gray-100 text-gray-700"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Nueva Contraseña</Label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Input 
+                  type="password" 
+                  value={passwordFormData.password} 
+                  onChange={(e) => setPasswordFormData({...passwordFormData, password: e.target.value})}
+                  placeholder="Mínimo 6 caracteres"
+                  className="pl-9 text-gray-900"
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Confirmar Contraseña</Label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Input 
+                  type="password" 
+                  value={passwordFormData.confirmPassword} 
+                  onChange={(e) => setPasswordFormData({...passwordFormData, confirmPassword: e.target.value})}
+                  placeholder="Mínimo 6 caracteres"
+                  className="pl-9 text-gray-900"
+                />
+              </div>
+              {passwordFormData.password && passwordFormData.confirmPassword && passwordFormData.password !== passwordFormData.confirmPassword && (
+                <p className="text-sm font-medium text-red-500 mt-1">
+                  Las contraseñas no coinciden.
+                </p>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseSetPasswordModal} disabled={isSettingPassword}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSetPassword} 
+              disabled={
+                isSettingPassword || 
+                !passwordFormData.password || 
+                passwordFormData.password.length < 6 || 
+                passwordFormData.password !== passwordFormData.confirmPassword
+              }
+              className="bg-custom-primary text-white hover:bg-custom-primary/90"
+            >
+              {isSettingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Establecer Contraseña
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 };

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 
 const TaxRateResultDisplay = ({ result }) => {
   if (!result) return null;
@@ -48,13 +49,13 @@ const TaxRateResultDisplay = ({ result }) => {
 
 const TaxRateCalculatorThreeComps = forwardRef(({ disabled }, ref) => {
   const { toast } = useToast();
-  const [gba, setGba] = useState("");
-  const [currentValue2024, setCurrentValue2024] = useState("");
-  const [comp1SqFt, setComp1SqFt] = useState("");
-  const [comp2SqFt, setComp2SqFt] = useState("");
-  const [comp3SqFt, setComp3SqFt] = useState("");
-  const [estimatedOverpayment, setEstimatedOverpayment] = useState("");
-  const [calculationResult, setCalculationResult] = useState(null);
+  const [gba, setGba] = useLocalStorageState("property-tools:tax-rate-3comps:gba", "");
+const [currentValue2024, setCurrentValue2024] = useLocalStorageState("property-tools:tax-rate-3comps:currentValue2024", "");
+const [comp1SqFt, setComp1SqFt] = useLocalStorageState("property-tools:tax-rate-3comps:comp1SqFt", "");
+const [comp2SqFt, setComp2SqFt] = useLocalStorageState("property-tools:tax-rate-3comps:comp2SqFt", "");
+const [comp3SqFt, setComp3SqFt] = useLocalStorageState("property-tools:tax-rate-3comps:comp3SqFt", "");
+const [estimatedOverpayment, setEstimatedOverpayment] = useLocalStorageState("property-tools:tax-rate-3comps:estimatedOverpayment", "");
+const [calculationResult, setCalculationResult] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const formatCurrency = (value) => `$${parseFloat(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

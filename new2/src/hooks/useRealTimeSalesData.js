@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { fetchGlobalSettingsData, fetchSalesTeamData, syncMemberMonthlyMetrics } from '@/lib/salesService';

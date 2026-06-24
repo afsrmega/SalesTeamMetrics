@@ -1,5 +1,5 @@
-
 import { supabase } from './customSupabaseClient';
+import { getEffectiveGoalForMember, getEffectiveQuarterGoalForMember } from './onboardingHelpers';
 
 /**
  * resolveGoalForMemberPeriod (Async)
@@ -11,11 +11,10 @@ import { supabase } from './customSupabaseClient';
  */
 export const resolveGoalForMemberPeriod = async (memberId, periodType, periodKey, globalSettings = null) => {
   console.log(`[CommissionEngine] Resolving async goal for member: ${memberId}, period: ${periodType}-${periodKey}`);
-  console.log('AUDIT FIX: Replaced user_id with member_id in resolveGoalForMemberPeriod');
   try {
     let query = supabase
       .from('sales_team')
-      .select('monthly_quota, quarterly_quota, monthly_quota_override_enabled');
+      .select('*, monthly_quota, quarterly_quota, monthly_quota_override_enabled');
       
     if (memberId) {
       query = query.eq('id', memberId);
@@ -44,37 +43,37 @@ export const resolveGoalForMemberPeriod = async (memberId, periodType, periodKey
     }
 
     const overrideEnabled = member?.monthly_quota_override_enabled === true;
-    let goal = 0;
+    let baseGoal = 0;
     let source = 'none';
 
     console.log(`[CommissionEngine] 1. Checking member-specific quota override (enabled: ${overrideEnabled})`);
     if (overrideEnabled) {
       const val = periodType === 'month' ? member?.monthly_quota : member?.quarterly_quota;
       if (val > 0) {
-        goal = Number(val);
+        baseGoal = Number(val);
         source = 'sales_team_override';
-        console.log(`[CommissionEngine] -> Selected member override: ${goal}`);
-        return { goal, source, overrideEnabled, teamGoal: Number(periodGoals?.team_goal || settings?.team_monthly_target || 0) };
+        console.log(`[CommissionEngine] -> Selected member override: ${baseGoal}`);
+        return { goal: baseGoal, source, overrideEnabled, teamGoal: Number(periodGoals?.team_goal || settings?.team_monthly_target || 0) };
       }
     }
 
     console.log(`[CommissionEngine] 2. Checking goals_by_period fallback`);
     if (periodGoals?.individual_goal > 0) {
-      goal = Number(periodGoals.individual_goal);
+      baseGoal = Number(periodGoals.individual_goal);
       source = 'goals_by_period';
-      console.log(`[CommissionEngine] -> Selected goals_by_period: ${goal}`);
-      return { goal, source, overrideEnabled, teamGoal: Number(periodGoals?.team_goal || 0) };
+      console.log(`[CommissionEngine] -> Selected goals_by_period: ${baseGoal}`);
+      return { goal: baseGoal, source, overrideEnabled, teamGoal: Number(periodGoals?.team_goal || 0) };
     }
 
     console.log(`[CommissionEngine] 3. Checking global_settings fallback`);
     if (settings) {
       const val = periodType === 'month' ? settings.individual_monthly_commission_threshold : settings.individual_quarterly_target;
       if (val > 0) {
-        goal = Number(val);
+        baseGoal = Number(val);
         source = 'global_settings';
-        console.log(`[CommissionEngine] -> Selected global_settings: ${goal}`);
+        console.log(`[CommissionEngine] -> Selected global_settings: ${baseGoal}`);
         const tGoal = periodType === 'month' ? settings.team_monthly_target : settings.team_quarterly_target;
-        return { goal, source, overrideEnabled, teamGoal: Number(tGoal || 0) };
+        return { goal: baseGoal, source, overrideEnabled, teamGoal: Number(tGoal || 0) };
       }
     }
 
@@ -91,7 +90,6 @@ export const resolveGoalForMemberPeriod = async (memberId, periodType, periodKey
  */
 export const resolveGoalSync = (member, periodGoals, globalSettings, periodType) => {
   console.log(`[CommissionEngine] Resolving sync goal for ${periodType}`);
-  console.log('AUDIT FIX: Replaced user_id with member_id in resolveGoalSync');
   
   const overrideEnabled = member?.monthly_quota_override_enabled === true;
   console.log(`[CommissionEngine] 1. Checking member override (enabled: ${overrideEnabled})`);
@@ -127,7 +125,6 @@ export const resolveGoalSync = (member, periodGoals, globalSettings, periodType)
  * Exact Excel billing rates logic
  */
 export const resolveBillingRate = (state, propertyType) => {
-  console.log('AUDIT FIX: Replaced user_id with member_id in resolveBillingRate');
   const isTx = (state || '').toUpperCase().trim() === 'TX' || (state || '').toUpperCase().trim() === 'TEXAS';
   const isRes = (propertyType || '').toUpperCase().trim() === 'RESIDENTIAL' || (propertyType || '').toUpperCase().trim() === 'RESIDENCIAL';
 
@@ -142,7 +139,6 @@ export const resolveBillingRate = (state, propertyType) => {
  * computeBillingAmount
  */
 export const computeBillingAmount = (saleValue, state, propertyType) => {
-  console.log('AUDIT FIX: Replaced user_id with member_id in computeBillingAmount');
   const rate = resolveBillingRate(state, propertyType);
   return (Number(saleValue) || 0) * rate;
 };
@@ -151,7 +147,6 @@ export const computeBillingAmount = (saleValue, state, propertyType) => {
  * aggregateSalesForPeriod
  */
 export const aggregateSalesForPeriod = (records) => {
-  console.log('AUDIT FIX: Replaced user_id with member_id in aggregateSalesForPeriod');
   let totalSalesValue = 0;
   let totalBillingAmount = 0;
   let transactionCount = 0;
@@ -171,7 +166,6 @@ export const aggregateSalesForPeriod = (records) => {
  * getTierConfiguration
  */
 export const getTierConfiguration = (globalSettings) => {
-  console.log('AUDIT FIX: Replaced user_id with member_id in getTierConfiguration');
   const defaultTiers = [
     { threshold: 0, bonusPercent: 0 },
     { threshold: 50, bonusPercent: 5 },
@@ -195,7 +189,6 @@ export const getTierConfiguration = (globalSettings) => {
  * STRICT "greater than" comparison (not inclusive)
  */
 export const selectBonusPercent = (achievementPercent, tiers) => {
-  console.log('AUDIT FIX: Replaced user_id with member_id in selectBonusPercent');
   if (achievementPercent == null || isNaN(achievementPercent)) return 0;
   const sorted = [...tiers].sort((a, b) => b.threshold - a.threshold);
   const match = sorted.find(t => achievementPercent > t.threshold);
@@ -206,7 +199,6 @@ export const selectBonusPercent = (achievementPercent, tiers) => {
  * computeCommissionForMemberPeriod
  */
 export const computeCommissionForMemberPeriod = (totalBillingAmount, bonusPercent) => {
-  console.log('AUDIT FIX: Replaced user_id with member_id in computeCommissionForMemberPeriod');
   return (Number(totalBillingAmount) || 0) * ((Number(bonusPercent) || 0) / 100);
 };
 
@@ -223,21 +215,39 @@ export const calculateFullCommissionForMemberPeriod = ({
   periodType = 'month'
 }) => {
   console.log(`[CommissionEngine] calculateFullCommissionForMemberPeriod - START (${periodType})`);
-  console.log('AUDIT FIX: Replaced user_id with member_id in calculateFullCommissionForMemberPeriod');
   
-  const goal = resolveGoalSync(member, periodGoals, globalSettings, periodType);
+  // 1. FIRST resolve the base goal from global/override/period config
+  const baseGoal = resolveGoalSync(member, periodGoals, globalSettings, periodType);
+  let effectiveGoal = baseGoal;
+
+  // 2. THEN apply onboarding multiplier ONLY if new member
+  if (member?.is_new_member && member?.new_member_start_date) {
+    const periodKey = periodType === 'month' ? 'current' : 'current'; // Approximation if periodKey not provided
+    if (periodType === 'month') {
+      effectiveGoal = getEffectiveGoalForMember(member, baseGoal, 'month', periodKey);
+      console.log(`[CommissionEngine] Onboarding (Month) - BaseGoal: ${baseGoal}, Multiplier: ${effectiveGoal / baseGoal}, EffectiveGoal: ${effectiveGoal}`);
+    } else {
+      // For quarter, baseGoal here acts as the full quarter goal.
+      effectiveGoal = getEffectiveQuarterGoalForMember(member, baseGoal / 3, periodKey);
+      console.log(`[CommissionEngine] Onboarding (Quarter) - BaseGoal: ${baseGoal}, EffectiveGoal: ${effectiveGoal}`);
+    }
+  }
+  
   const agg = preAggregated || aggregateSalesForPeriod(records);
   
-  const achievementPercent = goal > 0 ? (agg.totalSalesValue / goal) * 100 : 0;
+  // 3. Use effectiveGoal for achievement % calculation
+  const achievementPercent = effectiveGoal > 0 ? (agg.totalSalesValue / effectiveGoal) * 100 : 0;
   
+  // 4. Use achievementPercent (derived from effectiveGoal) for tier selection
   const tiers = getTierConfiguration(globalSettings);
   const bonusPercent = selectBonusPercent(achievementPercent, tiers);
   const commission = computeCommissionForMemberPeriod(agg.totalBillingAmount, bonusPercent);
 
-  console.log(`[CommissionEngine] Result: goal=${goal}, sales=${agg.totalSalesValue}, billing=${agg.totalBillingAmount}, ach%=${achievementPercent.toFixed(2)}%, bonus%=${bonusPercent}%, comm=${commission.toFixed(2)}`);
+  console.log(`[CommissionEngine] Result: baseGoal=${baseGoal}, effectiveGoal=${effectiveGoal}, sales=${agg.totalSalesValue}, ach%=${achievementPercent.toFixed(2)}%, comm=${commission.toFixed(2)}`);
 
   return {
-    goal,
+    goal: effectiveGoal, // Primary goal used across the app
+    baseGoal, // Raw base goal returned for transparency
     totalSalesValue: agg.totalSalesValue,
     totalBillingAmount: agg.totalBillingAmount,
     transactionCount: agg.transactionCount,

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -92,28 +91,30 @@ const QuarterGoalDistributionChart = ({ quarterGoal }) => {
         <CardDescription>Theoretical distribution: 90% Texas, 10% Out of Texas</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col pt-4">
-        <div className="h-[220px] w-full relative">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={renderCustomizedLabel}
-                outerRadius={90}
-                dataKey="value"
-                stroke="none"
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip content={renderCustomTooltip} />
-              <Legend content={renderLegend} verticalAlign="bottom" wrapperStyle={{ paddingTop: "20px" }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        <div className="h-[300px] w-full relative overflow-visible">
+        <ResponsiveContainer width="100%" height="100%">
+         <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+      <Pie
+        data={data}
+        cx="50%"
+        cy="50%"
+        labelLine={false}
+        label={renderCustomizedLabel}
+        outerRadius={95}
+        dataKey="value"
+        stroke="none"
+        isAnimationActive={false}
+      >
+        {data.map((entry, index) => (
+          <Cell key={`cell-${index}`} fill={entry.color} />
+        ))}
+      </Pie>
+      <Tooltip content={renderCustomTooltip} />
+    </PieChart>
+  </ResponsiveContainer>
+</div>
+
+{renderLegend({ payload: data.map((item) => ({ payload: item })) })}
         
         <div className="grid grid-cols-2 gap-4 mt-auto pt-6">
           <div className="bg-blue-50/80 p-4 rounded-xl border border-blue-100 shadow-sm transition-all hover:shadow-md">

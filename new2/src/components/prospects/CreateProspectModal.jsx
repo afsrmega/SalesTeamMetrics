@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { Loader2 } from 'lucide-react';
+import { normalizeProspectType } from '@/lib/utils';
 
 const CreateProspectModal = ({ 
   isOpen, 
@@ -27,7 +28,7 @@ const CreateProspectModal = ({
     follow_up_at: '',
     last_contact_date: '',
     documents_sent: false,
-    property_type: '',
+    prospect_type: 'commercial',
     has_portfolio: false,
     estimated_property_value: 0,
     notes: '',
@@ -52,7 +53,8 @@ const CreateProspectModal = ({
     if (!formData.prospect_name || !formData.prospect_name.trim()) errors.prospect_name = "El Nombre del prospecto es obligatorio";
     if (!formData.external_id) errors.external_id = "El ID Externo es obligatorio";
     if (!formData.source_lead) errors.source_lead = "El Origen es obligatorio";
-    if (!formData.property_type) errors.property_type = "El Tipo de Propiedad es obligatorio";
+    if (!formData.prospect_type) errors.prospect_type = "El Tipo de Prospecto es obligatorio";
+    
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -60,7 +62,10 @@ const CreateProspectModal = ({
   const handleSubmit = (e) => {
     e.preventDefault();
     if (validate()) {
-      onSubmit(formData);
+      onSubmit({
+        ...formData,
+        prospect_type: normalizeProspectType(formData.prospect_type)
+      });
     }
   };
 
@@ -117,17 +122,18 @@ const CreateProspectModal = ({
             </div>
 
             <div className="space-y-2">
-              <Label>Tipo de Propiedad <span className="text-red-500">*</span></Label>
-              <Select value={formData.property_type} onValueChange={(val) => updateField('property_type', val)}>
+              <Label>Tipo de Prospecto <span className="text-red-500">*</span></Label>
+              <Select value={formData.prospect_type} onValueChange={(val) => updateField('prospect_type', val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona el tipo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Residential">Residencial</SelectItem>
-                  <SelectItem value="Commercial">Comercial</SelectItem>
+                  <SelectItem value="commercial">Commercial</SelectItem>
+                  <SelectItem value="residential">Residential</SelectItem>
+                  <SelectItem value="bpp">BPP</SelectItem>
                 </SelectContent>
               </Select>
-              {validationErrors.property_type && <p className="text-xs text-red-500">{validationErrors.property_type}</p>}
+              {validationErrors.prospect_type && <p className="text-xs text-red-500">{validationErrors.prospect_type}</p>}
             </div>
 
             <div className="space-y-2">

@@ -1,4 +1,6 @@
+
 import { supabase } from './customSupabaseClient';
+import { DEFAULT_QUARTER_DEFINITIONS } from './getQuarterDateRange';
 
 export const DEFAULT_TIERS = [
   { min: 0, max: 49.99, rate: 1 },
@@ -35,45 +37,12 @@ export const getDefaultSettings = () => ({
   commission_percentage: 0.01,
   commission_threshold: 16000000,
   commission_tiers: DEFAULT_TIERS,
+  quarter_definitions: DEFAULT_QUARTER_DEFINITIONS,
   ...DEFAULT_RATES
 });
 
 export const getGoalAffectingVariables = () => {
     return GOAL_AFFECTING_VARIABLES;
-};
-
-export const detectChangedVariables = (oldSettings, newSettings) => {
-    const changedVars = [];
-    const changeDetails = {};
-    let significantChange = false;
-
-    const keys = new Set([...Object.keys(oldSettings), ...Object.keys(newSettings)]);
-
-    keys.forEach(key => {
-        const isGoalVar = GOAL_AFFECTING_VARIABLES.includes(key);
-        const oldVal = isGoalVar ? parseFloat(oldSettings[key] || 0) : oldSettings[key];
-        const newVal = isGoalVar ? parseFloat(newSettings[key] || 0) : newSettings[key];
-
-        if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-            changedVars.push(key);
-            
-            if (isGoalVar) {
-                const percentageChange = oldVal > 0 ? ((newVal - oldVal) / oldVal) * 100 : (newVal > 0 ? 100 : 0);
-                changeDetails[key] = {
-                    old: oldVal,
-                    new: newVal,
-                    percentage: percentageChange.toFixed(2)
-                };
-
-                if (percentageChange < -20) {
-                    significantChange = true;
-                }
-            }
-        }
-    });
-
-    console.log("[detectChangedVariables] Result:", { changedVars, significantChange, changeDetails });
-    return { changedVars, significantChange, changeDetails };
 };
 
 export const fetchGlobalSettings = async () => {
@@ -97,6 +66,7 @@ export const fetchGlobalSettings = async () => {
     commission_percentage: data.commission_percentage !== null ? data.commission_percentage : 0.01,
     commission_threshold: data.commission_threshold !== null ? data.commission_threshold : 16000000,
     commission_tiers: data.commission_tiers || DEFAULT_TIERS,
+    quarter_definitions: data.quarter_definitions || DEFAULT_QUARTER_DEFINITIONS,
     natl_res_rate: data.natl_res_rate !== null ? Number(data.natl_res_rate) : DEFAULT_RATES.natl_res_rate,
     natl_comm_rate: data.natl_comm_rate !== null ? Number(data.natl_comm_rate) : DEFAULT_RATES.natl_comm_rate,
     tx_res_rate: data.tx_res_rate !== null ? Number(data.tx_res_rate) : DEFAULT_RATES.tx_res_rate,
@@ -122,6 +92,7 @@ export const saveGlobalSettings = async (settings) => {
       commission_percentage: parseFloat(settings.commission_percentage),
       commission_threshold: parseFloat(settings.commission_threshold),
       commission_tiers: settings.commission_tiers || DEFAULT_TIERS,
+      quarter_definitions: settings.quarter_definitions || DEFAULT_QUARTER_DEFINITIONS,
       natl_res_rate: parseFloat(settings.natl_res_rate) || DEFAULT_RATES.natl_res_rate,
       natl_comm_rate: parseFloat(settings.natl_comm_rate) || DEFAULT_RATES.natl_comm_rate,
       tx_res_rate: parseFloat(settings.tx_res_rate) || DEFAULT_RATES.tx_res_rate,

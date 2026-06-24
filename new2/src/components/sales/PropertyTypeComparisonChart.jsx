@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 import { formatCurrency } from "@/lib/salesUtils";
-import { Building2, Home } from "lucide-react";
+import { Building2, Home, Briefcase } from "lucide-react";
 import { motion } from "framer-motion";
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -34,10 +34,16 @@ const PropertyTypeComparisonChart = ({ comparisonData }) => {
       value: comparisonData.commercial || 0,
       color: "#f97316", // Orange-500
       icon: Building2
+    },
+    {
+      name: "BPP",
+      value: comparisonData.bpp || 0,
+      color: "#8b5cf6", // Violet-500
+      icon: Briefcase
     }
   ];
 
-  const total = (comparisonData.residential || 0) + (comparisonData.commercial || 0);
+  const total = (comparisonData.residential || 0) + (comparisonData.commercial || 0) + (comparisonData.bpp || 0);
 
   return (
     <motion.div
@@ -55,7 +61,7 @@ const PropertyTypeComparisonChart = ({ comparisonData }) => {
                 Ventas por Tipo de Propiedad
               </CardTitle>
               <CardDescription>
-                Comparativa de volumen de ventas Residencial vs Comercial (Mes Actual)
+                Comparativa de volumen de ventas Residencial vs Comercial vs BPP (Mes Actual)
               </CardDescription>
             </div>
             <div className="text-right">
@@ -89,7 +95,7 @@ const PropertyTypeComparisonChart = ({ comparisonData }) => {
                 />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />
                 <Legend iconType="circle" />
-                <Bar dataKey="value" name="Volumen de Ventas" radius={[6, 6, 0, 0]} barSize={80} animationDuration={1500}>
+                <Bar dataKey="value" name="Volumen de Ventas" radius={[6, 6, 0, 0]} barSize={60} animationDuration={1500}>
                   {data.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}

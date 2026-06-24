@@ -1,4 +1,3 @@
-
 import { supabase } from './customSupabaseClient';
 import { calculateNonResidentialSales, getCustomQuarter } from './salesUtils';
 import { fetchGlobalSettings } from './globalSettingsService';
@@ -14,11 +13,18 @@ const mapTeamMemberFromDB = (member) => ({
   quarterlyNonResidentialSales: member.quarterly_non_residential_sales || 0,
   linkedUserId: member.linked_user_id,
   monthlyQuota: member.monthly_quota || null,
-  quarterlyQuota: member.quarterly_quota || null
+  quarterlyQuota: member.quarterly_quota || null,
+  is_new_member: member.is_new_member || false,
+  new_member_start_date: member.new_member_start_date || null,
+  is_archived: member.is_archived || false,
+  archived_at: member.archived_at || null,
+  archived_by: member.archived_by || null,
+  archive_reason: member.archive_reason || null,
+  employment_start_date: member.employment_start_date || member.created_at || null,
+  employment_end_date: member.employment_end_date || null
 });
 
 export const calculateMemberMetrics = (member, globalSettings) => {
-    console.log('AUDIT FIX: Replaced user_id with linked_user_id in calculateMemberMetrics');
     const monthlyAgg = {
       totalSalesValue: parseFloat(member.monthlySales || 0),
       totalBillingAmount: parseFloat(member.monthlyBillingAmount || 0),
@@ -81,14 +87,12 @@ export const updateAllMemberGoalsFromGlobalSettings = async (userId, globalSetti
       throw new Error("Solo el administrador puede actualizar metas de todos los miembros.");
     }
 
-    // Keep user_id here because it's filtering by admin owner
     const { data: members, error: fetchError } = await supabase.from('sales_team').select('id').eq('user_id', userId);
     if (fetchError) throw new Error("Could not fetch team members to update goals.");
     
     const newMonthlyQuota = globalSettings.individual_monthly_commission_threshold ? parseFloat(globalSettings.individual_monthly_commission_threshold) : null;
     const newQuarterlyQuota = globalSettings.individual_quarterly_target ? parseFloat(globalSettings.individual_quarterly_target) : null;
 
-    // Keep user_id here because it's filtering by admin owner
     const { count, error: updateError } = await supabase
         .from('sales_team')
         .update({ monthly_quota: newMonthlyQuota, quarterly_quota: newQuarterlyQuota })
@@ -103,16 +107,14 @@ export const updateAllMemberGoalsFromGlobalSettings = async (userId, globalSetti
 
 export const recalculateAllMemberMetrics = async (userId, globalSettings) => {
     if (!userId || !globalSettings) throw new Error("User ID and Global Settings are required.");
-    // Keep user_id here because it's filtering by admin owner
     const { data: members, error: fetchError } = await supabase.from('sales_team').select('id').eq('user_id', userId);
     if (fetchError) throw fetchError;
-    const promises = members.map(m => syncMemberMonthlyMetrics(m.id));
+    const promises = members.map(m => syncMemberMonthlyMetrics(m.id, globalSettings));
     const results = await Promise.allSettled(promises);
     return { successCount: results.filter(r => r.status === 'fulfilled').length, totalCount: members.length };
 };
 
 export const enrichSalesTeamData = (salesTeam, globalSettings) => {
-    console.log('AUDIT FIX: Replaced user_id with linked_user_id in enrichSalesTeamData');
     if (!salesTeam || !Array.isArray(salesTeam)) return [];
     if (!globalSettings) return salesTeam.map(m => ({...m, metrics: {}}));
     return salesTeam.map(member => calculateMemberMetrics(member, globalSettings));
@@ -166,7 +168,6 @@ export const calculateSalesStats = (salesTeam, globalSettings) => {
 };
 
 export const fetchSalesTeamData = async (userId) => {
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in fetchSalesTeamData (if applicable)');
   try {
     const { data, error } = await supabase.from('sales_team').select('*').order('created_at', { ascending: true });
     if (error) throw error;
@@ -184,8 +185,7 @@ export const fetchGlobalSettingsData = async (userId) => {
   }
 };
 
-export const syncMemberMonthlyMetrics = async (memberId) => {
-    console.log('AUDIT FIX: Replaced user_id with linked_user_id in syncMemberMonthlyMetrics');
+export const syncMemberMonthlyMetrics = async (memberId, globalSettings = null) => {
     try {
       if (!memberId) throw new Error("No memberId provided");
       const { data: memberData, error: memberError } = await supabase.from('sales_team').select('user_id').eq('id', memberId).single();
@@ -193,7 +193,7 @@ export const syncMemberMonthlyMetrics = async (memberId) => {
       
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const { quarterStart, quarterEnd } = getCustomQuarter(now);
+      const { quarterStart, quarterEnd } = getCustomQuarter(now, globalSettings?.quarter_definitions);
       const earliestDate = startOfMonth < quarterStart ? startOfMonth : quarterStart;
 
       const { data: records, error } = await supabase
@@ -296,7 +296,6 @@ export const getPropertyTypeTotals = (records) => {
 };
 
 export const fetchMemberDataByAuthId = async (authUserId) => {
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in fetchMemberDataByAuthId');
   try {
     if (!authUserId) return null;
     let query = supabase.from('sales_team').select('*');
@@ -316,7 +315,6 @@ export const fetchMemberDataByAuthId = async (authUserId) => {
 };
 
 export const getSalesRecordsByMemberAndDateRange = async (memberId, startDate, endDate) => {
-    console.log('AUDIT FIX: Replaced user_id with linked_user_id in getSalesRecordsByMemberAndDateRange');
     try {
         if (!memberId) throw new Error("Member ID is required");
         const { data, error } = await supabase
@@ -332,7 +330,6 @@ export const getSalesRecordsByMemberAndDateRange = async (memberId, startDate, e
 };
 
 export const getWeeklyQuarterData = async (memberId, quarterStart, quarterEnd) => {
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getWeeklyQuarterData');
   try {
     if (!memberId) throw new Error("Member ID is required");
     const { data, error } = await supabase
@@ -348,7 +345,6 @@ export const getWeeklyQuarterData = async (memberId, quarterStart, quarterEnd) =
 };
 
 export const getWeeklyProgressData = async (memberId, quarterStart, quarterEnd, quarterGoal = null) => {
-  console.log('AUDIT FIX: Replaced user_id with linked_user_id in getWeeklyProgressData');
   try {
     const records = await getWeeklyQuarterData(memberId, quarterStart, quarterEnd);
     records.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -359,7 +355,6 @@ export const getWeeklyProgressData = async (memberId, quarterStart, quarterEnd, 
 };
 
 export const getMonthlyWeeklySalesData = async (memberId, startOfMonth, endOfMonth) => {
-    console.log('AUDIT FIX: Replaced user_id with linked_user_id in getMonthlyWeeklySalesData');
     try {
         if (!memberId) throw new Error("Member ID is required");
         const { data, error } = await supabase
@@ -376,19 +371,39 @@ export const getMonthlyWeeklySalesData = async (memberId, startOfMonth, endOfMon
 
 export const addSalesMember = async (memberData, userId, toast) => {
   try {
+    if (!memberData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(memberData.email)) {
+      throw new Error("Email format is invalid");
+    }
+
     let photoUrl = null;
     if (memberData.photoFile) photoUrl = await uploadMemberPhoto(memberData.photoFile, userId);
-    const newMember = {
-      user_id: userId, name: memberData.name, monthly_sales: parseFloat(memberData.monthlySales) || 0,
-      quarterly_sales: parseFloat(memberData.quarterlySales) || 0, monthly_billing_amount: 0, quarterly_billing_amount: 0, 
-      monthly_non_residential_sales: 0, quarterly_non_residential_sales: 0, photo_url: photoUrl,
-      linked_user_id: memberData.linkedUserId || null, email: memberData.email || null
-    };
-    const { data, error } = await supabase.from('sales_team').insert([newMember]).select().single();
-    if (error) throw error;
-    return mapTeamMemberFromDB(data);
+    
+    // Invoke the secure edge function to create auth user and DB record
+    const { data, error } = await supabase.functions.invoke('create-member', {
+      body: {
+        name: memberData.name,
+        email: memberData.email,
+        linkedUserId: memberData.linkedUserId || null,
+        isNewMember: memberData.is_new_member || false,
+        newMemberStartDate: memberData.new_member_start_date || null,
+        monthlySales: memberData.monthlySales,
+        quarterlySales: memberData.quarterlySales,
+        photoUrl: photoUrl
+      }
+    });
+
+    if (error) {
+      console.error("Function invocation error:", error);
+      throw new Error(error.message || "Failed to create member securely");
+    }
+
+    if (data && data.error) {
+      throw new Error(data.error);
+    }
+    
+    return mapTeamMemberFromDB(data.data);
   } catch (error) {
-    throw new Error(`Error adding team member: ${error.message}`);
+    throw new Error(`${error.message}`);
   }
 };
 
@@ -401,6 +416,15 @@ export const updateSalesMember = async (currentMember, updatedData, userId) => {
         quarterly_sales: parseFloat(updatedData.quarterlySales) || 0, photo_url: photoUrl, updated_at: new Date().toISOString()
       };
       if (updatedData.linkedUserId !== undefined) memberToUpdate.linked_user_id = updatedData.linkedUserId;
+      if (updatedData.is_new_member !== undefined) memberToUpdate.is_new_member = updatedData.is_new_member;
+      
+      // Sanitize new_member_start_date based on is_new_member flag
+      if (updatedData.is_new_member) {
+        memberToUpdate.new_member_start_date = updatedData.new_member_start_date || null;
+      } else {
+        memberToUpdate.new_member_start_date = null;
+      }
+      
       const { data, error } = await supabase.from('sales_team').update(memberToUpdate).eq('id', currentMember.id).select().single();
       if (error) throw error;
       return mapTeamMemberFromDB(data);
@@ -453,4 +477,44 @@ export const insertSaleRecord = async (payload, adminUserId = null) => {
   const { data, error } = await supabase.from('sales_records').insert([payload]).select().single();
   if (error) throw error;
   return data;
+};
+
+/**
+ * Archives a sales member.
+ * Historical sales data (sales_records, clients, prospects, commission_plans) 
+ * is completely preserved for reporting and audit purposes.
+ */
+export const archiveSalesMember = async (memberId, employment_end_date, archive_reason, archived_by_user_id) => {
+  try {
+    const { error } = await supabase.from('sales_team').update({
+      is_archived: true,
+      archived_at: new Date().toISOString(),
+      archived_by: archived_by_user_id,
+      employment_end_date: employment_end_date || null,
+      archive_reason: archive_reason || null
+    }).eq('id', memberId);
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    throw new Error(`Error archiving member: ${error.message}`);
+  }
+};
+
+/**
+ * Restores an archived sales member to active status.
+ */
+export const restoreSalesMember = async (memberId) => {
+  try {
+    const { error } = await supabase.from('sales_team').update({
+      is_archived: false,
+      archived_at: null,
+      archived_by: null,
+      archive_reason: null,
+      employment_end_date: null
+    }).eq('id', memberId);
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    throw new Error(`Error restoring member: ${error.message}`);
+  }
 };

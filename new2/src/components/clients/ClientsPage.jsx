@@ -3,13 +3,16 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useClientsData } from '@/hooks/useClientsData';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { getRapportMetrics } from '@/lib/clientTouchpointsService';
-import TopClientsTable from '@/components/prospects/TopClientsTable';
+import { supabase } from '@/lib/customSupabaseClient';
 import RapportPlanDrawer from './RapportPlanDrawer';
 import RapportMetrics from './RapportMetrics';
+import RevertClientModal from './RevertClientModal';
+import ClientSalesProtocolModal from './ClientSalesProtocolModal';
+import EditClientModal from './EditClientModal';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, AlertCircle, X } from 'lucide-react';
+import { Loader2, AlertCircle, X, Edit, Calendar } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import ClientHistoryDrawer from './ClientHistoryDrawer';
 import { useReminders } from '@/hooks/useReminders';
@@ -17,6 +20,11 @@ import { format, formatDistanceToNow } from 'date-fns';
 import ClientsFilterPanel from './ClientsFilterPanel';
 import { getAvailableTags } from '@/lib/tagsService';
 import { buildClientTagsMap } from '@/lib/clientsService';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+// UI components for filter
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Segments Service and Modals
 import { getSavedSegments, createSavedSegment, updateSavedSegment, deleteSavedSegment, toggleFavorite } from '@/lib/savedSegmentsService';
@@ -25,21 +33,27 @@ import RenameSegmentModal from '@/components/common/RenameSegmentModal';
 import DeleteSegmentModal from '@/components/common/DeleteSegmentModal';
 
 const defaultFilters = {
-  search: ''
+  search: '',
+  conversionChannel: 'all',
+  seniorManagerInvolved: 'all'
 };
 
 const ClientsPage = () => {
-  const { user } = useAuth();
-  const { clients, loading: clientsLoading, error, refetch } = useClientsData();
+  const { user, isAdmin } = useAuth();
+  const [filters, setFilters] = useState(defaultFilters);
+  const { clients, loading: clientsLoading, error, refetch } = useClientsData(filters);
   const { toast } = useToast();
   
-  const [filters, setFilters] = useState(defaultFilters);
   const [availableTags, setAvailableTags] = useState([]);
   const [includeTagIds, setIncludeTagIds] = useState([]);
   const [excludeTagIds, setExcludeTagIds] = useState([]);
   const [includeMode, setIncludeMode] = useState('any'); // 'any' or 'all'
   const [clientTagsMap, setClientTagsMap] = useState({});
   const [tagsLoading, setTagsLoading] = useState(true);
+
+  // Admin Seller Filter
+  const [selectedOwner, setSelectedOwner] = useState('all');
+  const [salesMembers, setSalesMembers] = useState([]);
 
   // Segments State
   const [savedSegments, setSavedSegments] = useState([]);
@@ -57,8 +71,41 @@ const ClientsPage = () => {
   const [selectedClientForRapport, setSelectedClientForRapport] = useState(null);
   const [isRapportOpen, setIsRapportOpen] = useState(false);
 
+  // Sales Protocol State
+  const [selectedClientForProtocol, setSelectedClientForProtocol] = useState(null);
+  const [isSalesProtocolOpen, setIsSalesProtocolOpen] = useState(false);
+
+  // Revert Client State
+  const [showRevertDialog, setShowRevertDialog] = useState(false);
+  const [clientToRevert, setClientToRevert] = useState(null);
+  const [isReverting, setIsReverting] = useState(false);
+
+  // Edit Client State
+  const [selectedClientForEdit, setSelectedClientForEdit] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
   const [metrics, setMetrics] = useState(null);
   const { overdueList, upcomingList } = useReminders();
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const fetchSalesTeam = async () => {
+      const { data, error } = await supabase
+        .from('sales_team')
+        .select('id, name, user_id, linked_user_id, email');
+        
+      if (error) {
+        console.error('Error fetching sales team:', error);
+        return;
+      }
+      
+      if (data) {
+        const uniqueMembers = Array.from(new Map(data.map(m => [m.id, m])).values());
+        setSalesMembers(uniqueMembers);
+      }
+    };
+    fetchSalesTeam();
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!user) return;
@@ -226,12 +273,72 @@ const ClientsPage = () => {
     setIncludeTagIds([]);
     setExcludeTagIds([]);
     setIncludeMode('any');
+    setSelectedOwner('all');
+  };
+
+  // Revert Client Handlers
+  const handleOpenRevertDialog = (client) => {
+    setClientToRevert(client);
+    setShowRevertDialog(true);
+  };
+
+  const handleConfirmRevert = async (reason) => {
+    if (!clientToRevert || !user) return;
+
+    setIsReverting(true);
+    try {
+      const { data, error } = await supabase.rpc('revert_client_to_prospect', {
+        p_client_id: clientToRevert.id,
+        p_reason: reason || null,
+        p_reverted_by: user.id
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to revert client to prospect');
+      }
+
+      if (data?.success) {
+        toast({
+          title: "Éxito",
+          description: "Cliente revertido a prospecto exitosamente",
+        });
+
+        setShowRevertDialog(false);
+        setClientToRevert(null);
+
+        // Refresh the clients list
+        await refetch();
+      } else {
+        throw new Error(data?.message || 'Unknown error occurred');
+      }
+    } catch (error) {
+      console.error('Revert client error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo revertir el cliente a prospecto. Por favor, intenta nuevamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsReverting(false);
+    }
+  };
+
+  const handleOpenSalesProtocol = (client) => {
+    setSelectedClientForProtocol(client);
+    setIsSalesProtocolOpen(true);
   };
 
   const filteredClients = useMemo(() => {
     if (!clients) return [];
     let result = clients;
     
+    // Owner filter (Admin only)
+    if (isAdmin && selectedOwner !== 'all') {
+      const selectedMember = salesMembers.find(m => m.id === selectedOwner);
+      const targetUserId = selectedMember?.linked_user_id || selectedMember?.user_id || selectedOwner;
+      result = result.filter(c => c.owner_user_id === targetUserId);
+    }
+
     // Search
     if (filters.search) {
       const term = filters.search.toLowerCase();
@@ -267,33 +374,30 @@ const ClientsPage = () => {
     }
 
     return result;
-  }, [clients, filters, includeTagIds, excludeTagIds, includeMode, clientTagsMap]);
+  }, [clients, filters, includeTagIds, excludeTagIds, includeMode, clientTagsMap, isAdmin, selectedOwner, salesMembers]);
 
   const totalPotencial = filteredClients.reduce((sum, c) => sum + Number(c.estimated_property_value || 0), 0);
   const pendingCount = filteredClients.filter(c => c.pending_for_financials).length;
   const totalClients = filteredClients.length;
 
-  const unimplementedToast = () => {
-    toast({
-      description: "🚧 This feature isn't implemented yet—but don't worry! You can request it in your next prompt! 🚀",
-    });
-  };
-
   const handleEdit = (client) => {
-    unimplementedToast();
-  };
-
-  const handleMarkFinancials = (client) => {
-    unimplementedToast();
-  };
-
-  const handleScheduleFollowUp = (client) => {
-    unimplementedToast();
+    setSelectedClientForEdit(client);
+    setIsEditModalOpen(true);
   };
 
   const handleViewRapport = (client) => {
     setSelectedClientForRapport(client);
     setIsRapportOpen(true);
+  };
+
+  const formatChannel = (channel) => {
+    switch(channel) {
+      case 'email': return 'Email';
+      case 'phone': return 'Phone';
+      case 'both': return 'Email + Phone';
+      case 'other': return 'Other';
+      default: return '-';
+    }
   };
 
   const loading = clientsLoading || tagsLoading || isLoadingSegments;
@@ -369,10 +473,37 @@ const ClientsPage = () => {
         onClearSegment={handleClearSegment}
       />
 
-      {(filters.search || includeTagIds.length > 0 || excludeTagIds.length > 0) && !activeSegmentId && (
+      {isAdmin && (
+        <div className="flex items-center space-x-3 mb-4 bg-muted/30 p-3 rounded-lg border">
+          <Label className="font-semibold text-muted-foreground whitespace-nowrap">Vendedor:</Label>
+          <Select 
+            value={selectedOwner} 
+            onValueChange={(val) => { 
+              setSelectedOwner(val); 
+              setActiveSegmentId(null); 
+            }}
+          >
+            <SelectTrigger className="w-[280px] bg-background">
+              <SelectValue placeholder="Todos los vendedores" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los vendedores</SelectItem>
+              {salesMembers.map(member => (
+                <SelectItem key={member.id} value={member.id}>
+                  {member.name || member.email || 'Sin nombre'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {(filters.search || filters.conversionChannel !== 'all' || filters.seniorManagerInvolved !== 'all' || includeTagIds.length > 0 || excludeTagIds.length > 0 || (isAdmin && selectedOwner !== 'all')) && !activeSegmentId && (
         <div className="flex flex-wrap gap-2 items-center text-sm mb-4">
           <span className="text-muted-foreground font-medium">Filtros Activos:</span>
           {filters.search && <Badge variant="secondary">Búsqueda <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => { setFilters(prev => ({...prev, search: ''})); setActiveSegmentId(null); }} /></Badge>}
+          {filters.conversionChannel !== 'all' && <Badge variant="secondary">Canal: {filters.conversionChannel} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => { setFilters(prev => ({...prev, conversionChannel: 'all'})); setActiveSegmentId(null); }} /></Badge>}
+          {filters.seniorManagerInvolved !== 'all' && <Badge variant="secondary">Sr/Mgr Involucrado: {filters.seniorManagerInvolved} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => { setFilters(prev => ({...prev, seniorManagerInvolved: 'all'})); setActiveSegmentId(null); }} /></Badge>}
           {includeTagIds.length > 0 && (
             <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-200">
               Includes: {includeTagIds.length} ({includeMode}) <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => { setIncludeTagIds([]); setActiveSegmentId(null); }} />
@@ -381,6 +512,11 @@ const ClientsPage = () => {
           {excludeTagIds.length > 0 && (
             <Badge variant="secondary" className="bg-red-100 text-red-800 hover:bg-red-200">
               Excludes: {excludeTagIds.length} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => { setExcludeTagIds([]); setActiveSegmentId(null); }} />
+            </Badge>
+          )}
+          {isAdmin && selectedOwner !== 'all' && (
+            <Badge variant="secondary" className="bg-purple-100 text-purple-800 hover:bg-purple-200">
+              Vendedor: {salesMembers.find(m => m.id === selectedOwner)?.name || 'Específico'} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => { setSelectedOwner('all'); setActiveSegmentId(null); }} />
             </Badge>
           )}
         </div>
@@ -408,6 +544,34 @@ const ClientsPage = () => {
         segmentName={savedSegments.find(s => s.id === segmentActionId)?.name}
       />
 
+      {/* Revert Client Modal */}
+      <RevertClientModal
+        isOpen={showRevertDialog}
+        onClose={() => {
+          setShowRevertDialog(false);
+          setClientToRevert(null);
+        }}
+        client={clientToRevert}
+        onConfirm={handleConfirmRevert}
+        isLoading={isReverting}
+      />
+
+      {/* Sales Protocol Modal */}
+      <ClientSalesProtocolModal
+        isOpen={isSalesProtocolOpen}
+        onClose={() => setIsSalesProtocolOpen(false)}
+        client={selectedClientForProtocol}
+        onSaved={refetch}
+      />
+
+      {/* Edit Client Modal */}
+      <EditClientModal 
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        client={selectedClientForEdit}
+        onSave={refetch}
+      />
+
       {/* KPIs Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="p-6 bg-white rounded-lg shadow border">
@@ -426,15 +590,79 @@ const ClientsPage = () => {
 
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Lista de Clientes</h2>
-        <TopClientsTable 
-          filteredClients={filteredClients} 
-          isLoading={loading}
-          onEdit={handleEdit}
-          onMarkFinancials={handleMarkFinancials}
-          onScheduleFollowUp={handleScheduleFollowUp}
-          onViewRapport={handleViewRapport}
-          refetch={refetch}
-        />
+        <div className="max-h-[600px] overflow-y-auto overflow-x-auto border rounded-lg bg-white shadow relative">
+          <Table className="relative border-collapse w-full">
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
+              <TableRow>
+                <TableHead className="bg-white">Ext ID</TableHead>
+                <TableHead className="bg-white">Nombre</TableHead>
+                <TableHead className="bg-white">Tags</TableHead>
+                <TableHead className="bg-white">Conversión</TableHead>
+                <TableHead className="bg-white">Valor Est.</TableHead>
+                <TableHead className="bg-white">Tipo</TableHead>
+                <TableHead className="bg-white">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredClients.map(c => {
+                const tags = clientTagsMap[c.id] || [];
+                const uniqueDisplayTags = Array.from(new Map(tags.map(t => [t.id, t])).values());
+
+                return (
+                  <TableRow key={c.id}>
+                    <TableCell>{c.external_id || 'N/A'}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 items-start">
+                        <span>{c.prospect_name || c.client_name || '—'}</span>
+                        {c.pending_for_financials && (
+                          <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50 px-1 py-0 h-4">
+                            Pendiente Finanzas
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1 max-w-[100px]">
+                        {uniqueDisplayTags.map(t => (
+                          <Badge key={`tag-${c.id}-${t.id}`} style={{backgroundColor: t.color, color: '#fff'}} className="text-[10px] px-1 py-0 h-4">
+                            {t.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant="outline" className="text-xs w-fit">
+                          Ch: {formatChannel(c.conversion_channel)}
+                        </Badge>
+                        <Badge variant={c.senior_manager_involved ? "default" : "secondary"} className="text-xs w-fit">
+                          Sr/Mgr: {c.senior_manager_involved ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell>${Number(c.estimated_property_value || 0).toLocaleString()}</TableCell>
+                    <TableCell>{c.property_type}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleEdit(c)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleViewRapport(c)}>Plan</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleOpenSalesProtocol(c)}>Protocolo</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleOpenRevertDialog(c)} className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200">Revertir</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {filteredClients.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-gray-500 py-4">No se encontraron clientes que coincidan con los filtros.</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       <ClientHistoryDrawer 

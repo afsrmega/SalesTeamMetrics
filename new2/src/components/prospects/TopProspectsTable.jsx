@@ -15,6 +15,44 @@ const TopProspectsTable = ({ filteredProspects, onEdit, onConvert, onScheduleFol
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val || 0);
   const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString() : 'N/A';
 
+  const getDaysSinceLastContact = (lastContactDate) => {
+    if (!lastContactDate) return null;
+    
+    const contactDate = new Date(lastContactDate);
+    if (isNaN(contactDate.getTime())) return null;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    contactDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = today - contactDate;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays >= 0 ? diffDays : null;
+  };
+
+  const getLastContactAging = (lastContactDate) => {
+    const days = getDaysSinceLastContact(lastContactDate);
+    
+    if (days === null) {
+      return { label: "Sin contacto", variant: "secondary" };
+    }
+    
+    if (days >= 0 && days <= 4) {
+      return { label: `${days} días`, variant: "outline" };
+    }
+    
+    if (days >= 5 && days <= 7) {
+      return { label: `${days} días`, variant: "destructive" };
+    }
+    
+    if (days > 7) {
+      return { label: "Más de 7 días", variant: "destructive" };
+    }
+    
+    return { label: "Sin contacto", variant: "secondary" };
+  };
+
   const [activeTagEntity, setActiveTagEntity] = useState(null);
 
   const handleSaveTags = async (tagsToAdd, tagsToRemove) => {
@@ -43,20 +81,38 @@ const TopProspectsTable = ({ filteredProspects, onEdit, onConvert, onScheduleFol
               <TableHead>Valor Est.</TableHead>
               <TableHead>Calif.</TableHead>
               <TableHead>Follow Up</TableHead>
+              <TableHead>Último contacto</TableHead>
               <TableHead>Docs</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(!filteredProspects || filteredProspects.length === 0) ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-4">No hay prospectos.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-4">No hay prospectos.</TableCell></TableRow>
             ) : (
               filteredProspects.map(p => {
                 const tags = p.prospect_tags?.map(pt => pt.tags).filter(Boolean) || [];
+                const contactAging = getLastContactAging(p.last_contact_date);
+                
+                const pType = p.prospect_type || 'Commercial';
+                const typeColors = {
+                  Commercial: 'bg-blue-100 text-blue-800 border-blue-200',
+                  Residential: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                  BPP: 'bg-purple-100 text-purple-800 border-purple-200'
+                };
+                const pTypeColor = typeColors[pType] || typeColors.Commercial;
+
                 return (
                 <TableRow key={p.id} className="group">
                   <TableCell className="font-medium">{p.external_id}</TableCell>
-                  <TableCell>{p.prospect_name || '—'}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1 items-start">
+                      <span>{p.prospect_name || '—'}</span>
+                      <Badge variant="outline" className={`w-fit text-[10px] px-1 py-0 h-4 ${pTypeColor}`}>
+                        {pType}
+                      </Badge>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {tags.length > 0 ? (
                       <div className="flex flex-wrap gap-1 max-w-[150px]">
@@ -75,6 +131,11 @@ const TopProspectsTable = ({ filteredProspects, onEdit, onConvert, onScheduleFol
                     </Badge>
                   </TableCell>
                   <TableCell>{formatDate(p.follow_up_at)}</TableCell>
+                  <TableCell>
+                    <Badge variant={contactAging.variant}>
+                      {contactAging.label}
+                    </Badge>
+                  </TableCell>
                   <TableCell>{p.documents_sent ? <Badge variant="outline" className="text-green-600 border-green-600">Sí</Badge> : <Badge variant="secondary">No</Badge>}</TableCell>
                   <TableCell className="text-right space-x-1">
                     <TooltipProvider>

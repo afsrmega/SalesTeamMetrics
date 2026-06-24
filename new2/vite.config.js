@@ -278,7 +278,8 @@ logger.error = (msg, options) => {
 }
 
 export default defineConfig({
-	base: isDev ? '/' : '/SalesTeamMetrics/',
+	// GitHub Pages: use relative asset paths so the app works under /<repo-name>/
+	base: './',
 	customLogger: logger,
 	plugins: [
 		...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin(), selectionModePlugin()] : []),
@@ -290,7 +291,10 @@ export default defineConfig({
 		headers: {
 			'Cross-Origin-Embedder-Policy': 'credentialless',
 		},
-		allowedHosts: true,
+		allowedHosts: [
+			'.app-preview.com',
+			'.app-preview.io',
+		],
 	},
 	resolve: {
 		extensions: ['.jsx', '.js', '.tsx', '.ts', '.json', ],

@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/customSupabaseClient';
 
 export const getEffectiveMemberGoal = async (memberId, periodType, periodKey) => {
@@ -88,18 +87,35 @@ export const checkExternalIdUnique = async (externalId) => {
 };
 
 export const createProspect = async (prospectData) => {
-  if (!prospectData.external_id) throw new Error('El ID Externo es obligatorio.');
-  if (!prospectData.prospect_name || !prospectData.prospect_name.trim()) throw new Error('El Nombre del prospecto es obligatorio.');
-  if (!prospectData.source_lead) throw new Error('El Origen es obligatorio.');
-  if (!prospectData.property_type) throw new Error('El Tipo de Propiedad es obligatorio.');
+  if (!prospectData.external_id) {
+    throw new Error('El ID Externo es obligatorio.');
+  }
+
+  if (!prospectData.prospect_name || !prospectData.prospect_name.trim()) {
+    throw new Error('El Nombre del prospecto es obligatorio.');
+  }
+
+  if (!prospectData.source_lead) {
+    throw new Error('El Origen es obligatorio.');
+  }
+
+  if (!prospectData.prospect_type) {
+    throw new Error('El Tipo de Prospecto es obligatorio.');
+  }
 
   const isUnique = await checkExternalIdUnique(prospectData.external_id);
-  if (!isUnique) throw new Error(`El ID Externo ${prospectData.external_id} ya existe. Por favor usa uno diferente.`);
+
+  if (!isUnique) {
+    throw new Error(`El ID Externo ${prospectData.external_id} ya existe. Por favor usa uno diferente.`);
+  }
 
   const formattedData = {
     ...prospectData,
-    prospect_name: prospectData.prospect_name.trim()
+    prospect_name: prospectData.prospect_name.trim(),
+    prospect_type: prospectData.prospect_type || 'commercial'
   };
+
+  delete formattedData.property_type;
 
   const { data, error } = await supabase
     .from('prospects')
@@ -111,14 +127,17 @@ export const createProspect = async (prospectData) => {
     if (error.code === '23505') {
       throw new Error('Ya existe un registro con este ID Externo.');
     }
+
     throw new Error(error.message || 'Error al crear el prospecto.');
   }
+
   return data;
 };
 
 export const updateProspectWithHistory = async (prospectId, updates, effectiveAt, note) => {
   try {
     const formattedUpdates = { ...updates };
+    delete formattedUpdates.property_type;
     if (formattedUpdates.prospect_name) {
       formattedUpdates.prospect_name = formattedUpdates.prospect_name.trim();
     }

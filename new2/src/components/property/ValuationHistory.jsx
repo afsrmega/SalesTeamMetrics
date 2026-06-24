@@ -1,5 +1,5 @@
+
 import React, { useState } from "react";
-import { motion } from "framer-motion";
 import { Home, Info, Expand, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -39,7 +39,7 @@ const ValuationHistory = ({ user, history, onDelete }) => {
 
   return (
     <>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}>
+      <div className="">
         <Card className="shadow-lg bg-white">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl text-gray-700"><Home className="h-6 w-6 text-gray-600" />Historial de Cálculos</CardTitle>
@@ -51,7 +51,7 @@ const ValuationHistory = ({ user, history, onDelete }) => {
             ) : (
               <div className="space-y-4">
                 {history.map(property => (
-                  <motion.div key={property.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }} className="p-4 border border-gray-200 rounded-lg bg-white hover:shadow-md transition-shadow">
+                  <div key={property.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:shadow-md transition-shadow">
                     <div className="flex justify-between items-start">
                       <h3 className="font-medium text-green-700">Cálculo: {property.initial_year} - {property.current_year} ({property.year_difference} años)</h3>
                       <div className="flex items-center">
@@ -65,13 +65,13 @@ const ValuationHistory = ({ user, history, onDelete }) => {
                       <div className="md:text-right"><span className="text-gray-500 block">Incremento:</span><p className="font-bold text-emerald-600">{parseFloat(property.percentage_increase).toFixed(2)}%</p></div>
                       <div className="md:text-right"><span className="text-gray-500 block">Anual:</span><p className="font-bold text-teal-600">{parseFloat(property.annual_appreciation).toFixed(2)}%</p></div>
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
 
       {selectedHistoryItem && (
         <Dialog open={isHistoryModalOpen} onOpenChange={setIsHistoryModalOpen}>

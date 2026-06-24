@@ -1,4 +1,3 @@
-
 import React from 'react';
 import PipelineFunnel from './PipelineFunnel';
 import FollowUpTimeline from './FollowUpTimeline';

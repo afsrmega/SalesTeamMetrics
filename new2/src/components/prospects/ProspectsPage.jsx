@@ -16,11 +16,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { convertProspectToClient, updateProspectWithHistory, createProspect, buildProspectTagsMap, deleteProspectWithReason, markAsLost, restoreProspect } from '@/lib/prospectsService';
 import { getAvailableTags } from '@/lib/tagsService';
 import { supabase } from '@/lib/customSupabaseClient';
 import { formatM } from '@/lib/formatters';
 import { sortProspectsByPriority } from '@/lib/prospectSortingUtils';
+import { normalizeProspectType, normalizeConversionChannel, normalizeSeniorManagerRole } from '@/lib/utils';
 
 // Segments Service and Modals
 import { getSavedSegments, createSavedSegment, updateSavedSegment, deleteSavedSegment, toggleFavorite } from '@/lib/savedSegmentsService';
@@ -56,7 +58,7 @@ import OverdueFollowUpsKPI from '@/components/prospects/OverdueFollowUpsKPI';
 const defaultFilters = {
   documentsSent: 'all',
   qualification: { min: 1, max: 10 },
-  propertyType: [],
+  prospectType: [],
   source: 'all',
   portfolio: false,
   followUpRange: 'all',
@@ -86,14 +88,30 @@ const ProspectsPage = () => {
   const [selectedOwner, setSelectedOwner] = useState('all');
   const [activeTab, setActiveTab] = useState('active');
 
-  // Quick Filter (Neon Funnel)
+  const [isCreating, setIsCreating] = useState(false);
+  const [salesMembers, setSalesMembers] = useState([]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      const fetchSalesMembers = async () => {
+        const { data } = await supabase.from('sales_team').select('id, name, user_id, linked_user_id, email');
+        if (data) {
+          const uniqueMembers = Array.from(new Map(data.map(m => [m.id, m])).values());
+          setSalesMembers(uniqueMembers);
+        }
+      };
+      fetchSalesMembers();
+    }
+  }, [isAdmin]);
+
+  // Quick Filter
   const [quickFilter, setQuickFilter] = useState(null);
 
   // Tags State
   const [availableTags, setAvailableTags] = useState([]);
   const [includeTagIds, setIncludeTagIds] = useState([]);
   const [excludeTagIds, setExcludeTagIds] = useState([]);
-  const [includeMode, setIncludeMode] = useState('any'); // 'any' or 'all'
+  const [includeMode, setIncludeMode] = useState('any');
   const [prospectTagsMap, setProspectTagsMap] = useState({});
   const [tagsLoading, setTagsLoading] = useState(true);
 
@@ -107,12 +125,10 @@ const ProspectsPage = () => {
   const [isDeleteSegmentModalOpen, setIsDeleteSegmentModalOpen] = useState(false);
   const [segmentActionId, setSegmentActionId] = useState(null);
 
-  // Lost/Restore Modals
   const [markAsLostModalOpen, setMarkAsLostModalOpen] = useState(false);
   const [restoreModalOpen, setRestoreModalOpen] = useState(false);
   const [selectedProspectForStatus, setSelectedProspectForStatus] = useState(null);
 
-  // Delete Prospect State
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [prospectToDelete, setProspectToDelete] = useState(null);
@@ -152,7 +168,6 @@ const ProspectsPage = () => {
     buildMap();
   }, [prospects]);
 
-  // Load Segments
   const fetchSegments = useCallback(async () => {
     if (!user) return;
     setIsLoadingSegments(true);
@@ -185,37 +200,24 @@ const ProspectsPage = () => {
         console.error('Failed to parse filters', e);
       }
     }
-
     const savedSegment = localStorage.getItem('activeSegmentId:prospects');
-    if (savedSegment) {
-      setActiveSegmentId(savedSegment);
-    }
+    if (savedSegment) setActiveSegmentId(savedSegment);
   }, [user, isAdmin]);
 
   useEffect(() => {
     if (!user) return;
     const key = isAdmin ? 'adminProspectsFiltersV3' : 'memberProspectsFiltersV3';
     localStorage.setItem(key, JSON.stringify({ filters, includeTagIds, excludeTagIds, includeMode }));
-    if (activeSegmentId) {
-      localStorage.setItem('activeSegmentId:prospects', activeSegmentId);
-    } else {
-      localStorage.removeItem('activeSegmentId:prospects');
-    }
+    if (activeSegmentId) localStorage.setItem('activeSegmentId:prospects', activeSegmentId);
+    else localStorage.removeItem('activeSegmentId:prospects');
   }, [filters, includeTagIds, excludeTagIds, includeMode, user, isAdmin, activeSegmentId]);
 
-  // Quick Filter Handlers
   const handleQuickFilter = (filter) => {
     setQuickFilter(filter);
-    if (filter) {
-      toast({ description: `Filtro rápido aplicado: ${filter.name}` });
-    }
+    if (filter) toast({ description: `Filtro rápido aplicado: ${filter.name}` });
   };
+  const clearQuickFilter = () => setQuickFilter(null);
 
-  const clearQuickFilter = () => {
-    setQuickFilter(null);
-  };
-
-  // Segment Handlers
   const handleApplySegment = (id) => {
     const segment = savedSegments.find(s => s.id === id);
     if (segment && segment.filters) {
@@ -266,9 +268,7 @@ const ProspectsPage = () => {
   const handleDeleteSegment = async () => {
     try {
       await deleteSavedSegment(segmentActionId);
-      if (activeSegmentId === segmentActionId) {
-        setActiveSegmentId(null);
-      }
+      if (activeSegmentId === segmentActionId) setActiveSegmentId(null);
       await fetchSegments();
       toast({ description: "Segmento eliminado." });
     } catch (err) {
@@ -294,26 +294,21 @@ const ProspectsPage = () => {
     setIncludeMode('any');
   };
 
-  // ✅ ESTANDARIZADO EN STATUS - NO MEZCLAR CON STAGE
   const activeProspects = useMemo(() => prospects.filter(p => p.status === 'active'), [prospects]);
   const lostProspects = useMemo(() => prospects.filter(p => p.status === 'lost'), [prospects]);
 
   const filterProspectList = (list) => {
     let result = list;
-    
-    // Apply Admin Owner Filter
     if (isAdmin && selectedOwner !== 'all') {
-      result = result.filter(p => p.owner_user_id === selectedOwner);
+      const selectedMember = salesMembers.find(m => m.id === selectedOwner);
+      const targetUserId = selectedMember?.linked_user_id || selectedMember?.user_id || selectedOwner;
+      result = result.filter(p => p.owner_user_id === targetUserId);
     }
-
     result = result.filter(p => {
-      // Quick Filter
       if (quickFilter && quickFilter.id !== 'all') {
         const q = p.qualification || 0;
         if (q < quickFilter.min || q > quickFilter.max) return false;
       }
-
-      // Search
       if (filters.search) {
         const term = filters.search.toLowerCase();
         const extId = String(p.external_id || '').toLowerCase();
@@ -321,64 +316,41 @@ const ProspectsPage = () => {
         const notes = (p.notes || '').toLowerCase();
         if (!extId.includes(term) && !name.includes(term) && !notes.includes(term)) return false;
       }
-      
-      // Documents Sent
       if (filters.documentsSent !== 'all') {
         const docs = filters.documentsSent === 'yes';
         if (Boolean(p.documents_sent) !== docs) return false;
       }
-
-      // Qualification (Standard Filter)
       if (filters.qualification?.min !== '' && p.qualification < Number(filters.qualification.min)) return false;
       if (filters.qualification?.max !== '' && p.qualification > Number(filters.qualification.max)) return false;
-
-      // Property Type
-      if (filters.propertyType?.length > 0) {
-        if (!filters.propertyType.includes(p.property_type)) return false;
+      if (filters.prospectType?.length > 0) {
+        const pType = p.prospect_type || 'Commercial';
+        if (!filters.prospectType.includes(pType)) return false;
       }
-
-      // Source
       if (filters.source !== 'all') {
         if (filters.source === 'Assigned' && p.source_lead !== 'Assigned') return false;
         if (filters.source === 'Other' && p.source_lead === 'Assigned') return false;
       }
-
-      // Portfolio
       if (filters.portfolio && !p.has_portfolio) return false;
-
-      // Follow Up
       if (filters.followUpRange !== 'all') {
         if (!p.follow_up_at) return false;
         const followUpDate = new Date(p.follow_up_at);
         const today = new Date();
         today.setHours(0,0,0,0);
-        
         switch (filters.followUpRange) {
-          case 'overdue':
-            if (!isBefore(followUpDate, today)) return false;
-            break;
-          case 'today':
-            if (!isToday(followUpDate)) return false;
-            break;
-          case 'next7':
-            if (!isAfter(followUpDate, today) || isAfter(followUpDate, addDays(today, 7))) return false;
-            break;
-          case 'next30':
-            if (!isAfter(followUpDate, today) || isAfter(followUpDate, addDays(today, 30))) return false;
-            break;
+          case 'overdue': if (!isBefore(followUpDate, today)) return false; break;
+          case 'today': if (!isToday(followUpDate)) return false; break;
+          case 'next7': if (!isAfter(followUpDate, today) || isAfter(followUpDate, addDays(today, 7))) return false; break;
+          case 'next30': if (!isAfter(followUpDate, today) || isAfter(followUpDate, addDays(today, 30))) return false; break;
           case 'custom':
             if (filters.followUpCustom?.from && isBefore(followUpDate, new Date(filters.followUpCustom.from))) return false;
             if (filters.followUpCustom?.to && isAfter(followUpDate, new Date(filters.followUpCustom.to))) return false;
             break;
-          default:
-            break;
+          default: break;
         }
       }
-
       return true;
     });
 
-    // Apply Tags Filter using prospectTagsMap
     if (Object.keys(prospectTagsMap).length > 0) {
       if (includeTagIds.length > 0) {
         if (includeMode === 'any') {
@@ -393,7 +365,6 @@ const ProspectsPage = () => {
           });
         }
       }
-
       if (excludeTagIds.length > 0) {
         result = result.filter(p => {
           const pTags = prospectTagsMap[p.id] || [];
@@ -401,26 +372,13 @@ const ProspectsPage = () => {
         });
       }
     }
-
     return result;
   };
 
-  // ✅ APLICAR FILTROS A CADA DATASET
-  const filteredProspects = useMemo(() => {
-    return filterProspectList(activeProspects);
-  }, [activeProspects, filters, isAdmin, selectedOwner, includeTagIds, excludeTagIds, includeMode, prospectTagsMap, quickFilter]);
-
-  const filteredProspectsLost = useMemo(() => {
-    return filterProspectList(lostProspects);
-  }, [lostProspects, filters, isAdmin, selectedOwner, includeTagIds, excludeTagIds, includeMode, prospectTagsMap, quickFilter]);
-
-  const sortedFilteredProspects = useMemo(() => {
-    return sortProspectsByPriority(filteredProspects);
-  }, [filteredProspects]);
-
-  const sortedFilteredProspectsLost = useMemo(() => {
-    return sortProspectsByPriority(filteredProspectsLost);
-  }, [filteredProspectsLost]);
+  const filteredProspects = useMemo(() => filterProspectList(activeProspects), [activeProspects, filters, isAdmin, selectedOwner, includeTagIds, excludeTagIds, includeMode, prospectTagsMap, quickFilter]);
+  const filteredProspectsLost = useMemo(() => filterProspectList(lostProspects), [lostProspects, filters, isAdmin, selectedOwner, includeTagIds, excludeTagIds, includeMode, prospectTagsMap, quickFilter]);
+  const sortedFilteredProspects = useMemo(() => sortProspectsByPriority(filteredProspects), [filteredProspects]);
+  const sortedFilteredProspectsLost = useMemo(() => sortProspectsByPriority(filteredProspectsLost), [filteredProspectsLost]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -428,7 +386,7 @@ const ProspectsPage = () => {
     if (filters.documentsSent !== 'all') count++;
     if (filters.source !== 'all') count++;
     if (filters.portfolio) count++;
-    if (filters.propertyType?.length > 0) count += filters.propertyType.length;
+    if (filters.prospectType?.length > 0) count += filters.prospectType.length;
     if (filters.followUpRange !== 'all') count++;
     if (filters.qualification?.min !== 1 || filters.qualification?.max !== 10) count++;
     if (includeTagIds.length > 0) count++;
@@ -448,18 +406,12 @@ const ProspectsPage = () => {
   };
 
   const removeFilter = (key, nestedKey) => {
-    setActiveSegmentId(null); // Modifying a filter clears the active segment state
-    if (key === 'owner') {
-      setSelectedOwner('all');
-    } else if (key === 'includeTags') {
-      setIncludeTagIds([]);
-    } else if (key === 'excludeTags') {
-      setExcludeTagIds([]);
-    } else if (nestedKey) {
-      setFilters(prev => ({ ...prev, [key]: { ...prev[key], [nestedKey]: defaultFilters[key][nestedKey] } }));
-    } else {
-      setFilters(prev => ({ ...prev, [key]: defaultFilters[key] }));
-    }
+    setActiveSegmentId(null);
+    if (key === 'owner') setSelectedOwner('all');
+    else if (key === 'includeTags') setIncludeTagIds([]);
+    else if (key === 'excludeTags') setExcludeTagIds([]);
+    else if (nestedKey) setFilters(prev => ({ ...prev, [key]: { ...prev[key], [nestedKey]: defaultFilters[key][nestedKey] } }));
+    else setFilters(prev => ({ ...prev, [key]: defaultFilters[key] }));
   };
 
   const [selectedProspectForHistory, setSelectedProspectForHistory] = useState(null);
@@ -471,39 +423,42 @@ const ProspectsPage = () => {
   const [note, setNote] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  // Modal States
+  // Conversion Details state
+  const [conversionChannel, setConversionChannel] = useState('');
+  const [seniorManagerInvolved, setSeniorManagerInvolved] = useState(false);
+  const [seniorManagerName, setSeniorManagerName] = useState('');
+  const [seniorManagerRole, setSeniorManagerRole] = useState('');
+  const [seniorManagerAppointmentAt, setSeniorManagerAppointmentAt] = useState('');
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isFollowUpModalOpen, setIsFollowUpModalOpen] = useState(false);
   const [isNotesDrawerOpen, setIsNotesDrawerOpen] = useState(false);
   const [selectedProspect, setSelectedProspect] = useState(null);
   
-  // Calendar specific modal states
   const [isDayDrawerOpen, setIsDayDrawerOpen] = useState(false);
   const [selectedDayDate, setSelectedDayDate] = useState(null);
   const [selectedDayProspects, setSelectedDayProspects] = useState([]);
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
 
-  const [isCreating, setIsCreating] = useState(false);
-  const [salesMembers, setSalesMembers] = useState([]);
-
-  useEffect(() => {
-    if (isAdmin) {
-      const fetchSalesMembers = async () => {
-        const { data } = await supabase.from('sales_team').select('user_id, name');
-        if (data) {
-          const uniqueMembers = Array.from(new Map(data.map(m => [m.user_id, m])).values());
-          setSalesMembers(uniqueMembers);
-        }
-      };
-      fetchSalesMembers();
-    }
-  }, [isAdmin]);
+  const typeColors = {
+    Commercial: 'bg-blue-100 text-blue-800 border-blue-200',
+    commercial: 'bg-blue-100 text-blue-800 border-blue-200',
+    Residential: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    residential: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    BPP: 'bg-purple-100 text-purple-800 border-purple-200',
+    bpp: 'bg-purple-100 text-purple-800 border-purple-200'
+  };
 
   const handleConvertClick = (prospect) => {
     setProspectToConvert(prospect);
     setEffectiveAt(new Date().toISOString().slice(0, 16));
     setNote('');
+    setConversionChannel('');
+    setSeniorManagerInvolved(false);
+    setSeniorManagerName('');
+    setSeniorManagerRole('');
+    setSeniorManagerAppointmentAt('');
     setConvertModalOpen(true);
   };
 
@@ -515,6 +470,18 @@ const ProspectsPage = () => {
     setProcessing(true);
     try {
         await convertProspectToClient(prospectToConvert.id, new Date(effectiveAt).toISOString(), note);
+        
+        const channelNorm = conversionChannel ? normalizeConversionChannel(conversionChannel) : null;
+        const roleNorm = seniorManagerInvolved ? normalizeSeniorManagerRole(seniorManagerRole) : null;
+
+        await supabase.from('clients').update({
+          conversion_channel: channelNorm,
+          senior_manager_involved: seniorManagerInvolved,
+          senior_manager_name: seniorManagerInvolved ? seniorManagerName : null,
+          senior_manager_role: roleNorm,
+          senior_manager_appointment_at: (seniorManagerInvolved && seniorManagerAppointmentAt) ? new Date(seniorManagerAppointmentAt).toISOString() : null
+        }).eq('source_prospect_id', prospectToConvert.id);
+
         toast({ title: "Éxito", description: "Prospecto convertido a cliente." });
         setConvertModalOpen(false);
         refetch();
@@ -553,27 +520,12 @@ const ProspectsPage = () => {
 
   const handleSaveEdit = async (prospectId, updates, effective_at, note) => {
     setProcessing(true);
-    console.log(`💾 Save flow started for prospect ID:`, prospectId);
-    console.log(`📦 Payload received in ProspectsPage:`, updates);
-    console.log(`📊 estimated_property_value in payload:`, updates.estimated_property_value);
-    console.log(`📊 Type:`, typeof updates.estimated_property_value);
-    
     try {
       const savedProspect = await updateProspectWithHistory(prospectId, updates, effective_at, note);
-      console.log(`[handleSaveEdit] Returned prospect from service:`, savedProspect);
-      
-      console.log(`🔄 Calling refetch...`);
       const freshProspects = await refetch();
-      console.log(`✅ Prospects fetched: ${freshProspects?.length || 0} records`);
-      
-      console.log(`🔍 Finding updated prospect in fresh data...`);
       const updatedProspect = freshProspects.find(p => p.id === prospectId);
-      
       if (updatedProspect) {
-        console.log(`✅ Found updated prospect:`, updatedProspect);
-        console.log(`🔄 Syncing selectedProspect...`);
         setSelectedProspect(updatedProspect);
-        console.log(`✅ selectedProspect synced:`, updatedProspect);
         setIsEditModalOpen(false);
         toast({ title: "Éxito", description: "Prospect actualizado correctamente" });
       } else {
@@ -581,7 +533,6 @@ const ProspectsPage = () => {
         setIsEditModalOpen(false);
       }
     } catch (error) {
-      console.error(`[handleSaveEdit] Error caught during save flow:`, error);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setProcessing(false);
@@ -624,11 +575,11 @@ const ProspectsPage = () => {
     try {
       const payload = {
         ...formData,
+        prospect_type: normalizeProspectType(formData.prospect_type),
         follow_up_at: formData.follow_up_at ? new Date(formData.follow_up_at).toISOString() : null,
         last_contact_date: formData.last_contact_date || null,
         owner_user_id: formData.owner_user_id || user.id,
       };
-
       await createProspect(payload);
       toast({ title: "Éxito", description: "Prospecto creado correctamente." });
       handleCloseCreateModal();
@@ -646,38 +597,23 @@ const ProspectsPage = () => {
   };
 
   const handleConfirmMarkAsLost = async (reason, notes, effectiveDate) => {
-    console.log('📌 handleConfirmMarkAsLost started')
-    console.log('📊 Prospect ID:', selectedProspectForStatus?.id)
-    console.log('📝 Reason:', reason)
-    console.log('📝 Notes:', notes)
-    
     try {
-      console.log('💾 Updating prospect with status: lost...')
-      // Call service function that updates and creates history
       await updateProspectWithHistory(selectedProspectForStatus.id, {
-        status: 'lost',  // ✅ AGREGAR STATUS
+        status: 'lost', 
         stage: 'Lost',
         lost_reason: reason,
         lost_notes: notes,
         lost_at: effectiveDate
       }, effectiveDate, notes || `Marked as lost: ${reason}`)
-      
-      console.log('🔄 Refetching prospects...')
-      await refetch()  // ✅ CON AWAIT
-      
-      console.log('✅ Prospect marked as lost')
+      await refetch() 
       toast({ description: 'Prospect marcado como lost' })
-      
-      // Limpiar UI
       setMarkAsLostModalOpen(false)
       setSelectedProspectForStatus(null)
-      
       if (selectedProspect?.id === selectedProspectForStatus?.id) {
         setSelectedProspect(null)
         setIsEditModalOpen(false)
       }
     } catch (error) {
-      console.error('❌ handleConfirmMarkAsLost failed:', error)
       toast({ description: 'Error: ' + error.message, variant: 'destructive' })
     }
   }
@@ -688,46 +624,31 @@ const ProspectsPage = () => {
   };
 
   const handleConfirmRestore = async (notes, effectiveDate) => {
-    console.log('♻️ handleConfirmRestore started')
-    console.log('📊 Prospect ID:', selectedProspectForStatus?.id)
-    
     try {
-      console.log('💾 Updating prospect with status: active...')
       await updateProspectWithHistory(selectedProspectForStatus.id, {
-        status: 'active',  // ✅ AGREGAR STATUS
+        status: 'active', 
         stage: 'Active',
         lost_reason: null,
         lost_notes: null,
         lost_at: null
       }, effectiveDate, notes || 'Restored prospect')
-      
-      console.log('🔄 Refetching prospects...')
-      await refetch()  // ✅ CON AWAIT
-      
-      console.log('✅ Prospect restored')
+      await refetch()
       toast({ description: 'Prospect restaurado' })
-      
-      // Limpiar UI
       setRestoreModalOpen(false)
       setSelectedProspectForStatus(null)
-      
       if (selectedProspect?.id === selectedProspectForStatus?.id) {
         setSelectedProspect(null)
         setIsEditModalOpen(false)
       }
-      
     } catch (error) {
-      console.error('❌ handleConfirmRestore failed:', error)
       toast({ description: 'Error: ' + error.message, variant: 'destructive' })
     }
   }
 
-  // Delete Handlers
   const handleOpenDeleteDialog = (prospect) => {
     setProspectToDelete(prospect);
     setDeleteReason('');
     setIsDeleteDialogOpen(true);
-    console.log(`[handleOpenDeleteDialog] Opened delete dialog for prospect:`, prospect);
   };
 
   const handleCancelDelete = () => {
@@ -742,27 +663,22 @@ const ProspectsPage = () => {
       toast({ title: "Error", description: "El motivo de eliminación es obligatorio", variant: "destructive" });
       return;
     }
-    
     const currentUserId = user?.id;
     if (!currentUserId) {
       toast({ title: "Error", description: "No se pudo verificar tu sesión. Por favor, recarga la página.", variant: "destructive" });
       return;
     }
-    
     setIsDeleting(true);
     try {
       await deleteProspectWithReason(prospectToDelete.id, trimmedReason, currentUserId);
       toast({ title: "Éxito", description: "Prospecto eliminado permanentemente." });
-      
       if (selectedProspect?.id === prospectToDelete.id) {
         setSelectedProspect(null);
         setIsEditModalOpen(false);
       }
-      
       handleCancelDelete();
       refetch();
     } catch (error) {
-      console.error("Delete error caught in handleConfirmDelete:", error);
       toast({ title: "Error", description: error.message || "Error al eliminar el prospecto", variant: "destructive" });
     } finally {
       setIsDeleting(false);
@@ -823,13 +739,13 @@ const ProspectsPage = () => {
 
         {activeFilterCount > 0 && !activeSegmentId && (
           <>
-            {isAdmin && selectedOwner !== 'all' && <Badge variant="secondary">Owner: {salesMembers.find(m => m.user_id === selectedOwner)?.name || selectedOwner} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => removeFilter('owner')} /></Badge>}
+            {isAdmin && selectedOwner !== 'all' && <Badge variant="secondary">Owner: {salesMembers.find(m => m.id === selectedOwner)?.name || selectedOwner} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => removeFilter('owner')} /></Badge>}
             {filters.search && <Badge variant="secondary">Búsqueda <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => removeFilter('search')} /></Badge>}
             {filters.documentsSent !== 'all' && <Badge variant="secondary">Docs: {filters.documentsSent} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => removeFilter('documentsSent')} /></Badge>}
             {filters.source !== 'all' && <Badge variant="secondary">Origen: {filters.source} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => removeFilter('source')} /></Badge>}
             {filters.portfolio && <Badge variant="secondary">Portafolio: Sí <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => removeFilter('portfolio')} /></Badge>}
-            {filters.propertyType?.map(pt => <Badge key={`filter-pt-${pt}`} variant="secondary">{pt} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => {
-              setFilters(prev => ({ ...prev, propertyType: prev.propertyType.filter(t => t !== pt) }));
+            {filters.prospectType?.map(pt => <Badge key={`filter-prt-${pt}`} variant="secondary">Tipo: {pt} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => {
+              setFilters(prev => ({ ...prev, prospectType: prev.prospectType.filter(t => t !== pt) }));
               setActiveSegmentId(null);
             }} /></Badge>)}
             {filters.followUpRange !== 'all' && <Badge variant="secondary">FollowUp: {filters.followUpRange} <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => removeFilter('followUpRange')} /></Badge>}
@@ -858,7 +774,7 @@ const ProspectsPage = () => {
             <SelectContent>
               <SelectItem value="all">All Members</SelectItem>
               {salesMembers.map(m => (
-                <SelectItem key={m.user_id} value={m.user_id}>{m.name}</SelectItem>
+                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -868,7 +784,7 @@ const ProspectsPage = () => {
       {activeTab === 'active' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ProspectsFunnel 
-            filteredProspects={sortedFilteredProspects} 
+            filteredProspects={sortedFilteredProspects.filter(p => String(p.qualification || "").toLowerCase() === "hot")} 
             onQuickFilter={handleQuickFilter}
             activeQuickFilter={quickFilter}
           />
@@ -986,7 +902,6 @@ const ProspectsPage = () => {
                       <TableHead className="bg-white">Nombre</TableHead>
                       <TableHead className="bg-white">Tags</TableHead>
                       <TableHead className="bg-white">Origen</TableHead>
-                      <TableHead className="bg-white">Tipo Propiedad</TableHead>
                       <TableHead className="bg-white">Valor Est.</TableHead>
                       <TableHead className="bg-white">Calificación (0-10)</TableHead>
                       <TableHead className="bg-white">Acciones</TableHead>
@@ -996,10 +911,21 @@ const ProspectsPage = () => {
                     {sortedFilteredProspects.map(p => {
                       const tags = prospectTagsMap[p.id] || [];
                       const uniqueDisplayTags = Array.from(new Map(tags.map(t => [t.id, t])).values());
+                      
+                      const pType = p.prospect_type ? String(p.prospect_type).toLowerCase() : 'commercial';
+                      const pTypeColor = typeColors[pType] || typeColors.commercial;
+
                       return (
                       <TableRow key={p.id}>
                         <TableCell>{p.external_id || 'N/A'}</TableCell>
-                        <TableCell>{p.prospect_name || '—'}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span>{p.prospect_name || '—'}</span>
+                            <Badge variant="outline" className={`w-fit text-[10px] px-1 py-0 h-4 ${pTypeColor}`}>
+                              {p.prospect_type || 'Commercial'}
+                            </Badge>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1 max-w-[100px]">
                             {uniqueDisplayTags.map(t => (
@@ -1010,7 +936,6 @@ const ProspectsPage = () => {
                           </div>
                         </TableCell>
                         <TableCell>{p.source_lead === 'Assigned' ? 'Asignado' : p.source_lead}</TableCell>
-                        <TableCell>{p.property_type === 'Residential' ? 'Residencial' : 'Comercial'}</TableCell>
                         <TableCell>${Number(p.estimated_property_value || 0).toLocaleString()}</TableCell>
                         <TableCell>
                           {p.qualification}
@@ -1034,7 +959,7 @@ const ProspectsPage = () => {
                       </TableRow>
                     )})}
                     {sortedFilteredProspects.length === 0 && (
-                      <TableRow><TableCell colSpan={8} className="text-center text-gray-500 py-4">No se encontraron prospectos que coincidan con los filtros.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center text-gray-500 py-4">No se encontraron prospectos que coincidan con los filtros.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -1136,11 +1061,71 @@ const ProspectsPage = () => {
       />
 
       <Dialog open={convertModalOpen} onOpenChange={setConvertModalOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Convertir a Cliente</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            
+            {/* Conversion Details Section */}
+            <div className="border rounded-md p-4 space-y-4 bg-muted/20">
+              <h4 className="font-semibold text-sm">Detalles de Conversión</h4>
+              <div className="space-y-2">
+                <Label>Convertido Vía</Label>
+                <Select value={conversionChannel || undefined} onValueChange={setConversionChannel}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar canal" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="phone">Phone</SelectItem>
+                    <SelectItem value="both">Email + Phone</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex items-center space-x-2 pt-2">
+                <Checkbox 
+                  id="senior-mgr" 
+                  checked={seniorManagerInvolved} 
+                  onCheckedChange={setSeniorManagerInvolved} 
+                />
+                <Label htmlFor="senior-mgr" className="cursor-pointer">Senior/Manager Appointment Involved</Label>
+              </div>
+
+              {seniorManagerInvolved && (
+                <div className="space-y-3 pt-2 border-t mt-2">
+                  <div className="space-y-1">
+                    <Label>Senior/Manager Name</Label>
+                    <Input 
+                      value={seniorManagerName} 
+                      onChange={e => setSeniorManagerName(e.target.value)} 
+                      placeholder="Enter name"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Role</Label>
+                    <Select value={seniorManagerRole || undefined} onValueChange={setSeniorManagerRole}>
+                      <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="senior">Senior</SelectItem>
+                        <SelectItem value="manager">Manager</SelectItem>
+                        <SelectItem value="both">Senior + Manager</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Appointment Date</Label>
+                    <Input 
+                      type="datetime-local" 
+                      value={seniorManagerAppointmentAt} 
+                      onChange={e => setSeniorManagerAppointmentAt(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label>Fecha Efectiva (Obligatorio)</Label>
               <Input type="datetime-local" value={effectiveAt} onChange={(e) => setEffectiveAt(e.target.value)} required />

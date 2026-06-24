@@ -1,6 +1,7 @@
+
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Calculator, TrendingUp, Share2 } from "lucide-react";
+import { Calculator, TrendingUp, Share2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,17 +10,33 @@ import { useToast } from "@/components/ui/use-toast";
 import { saveValuationData, saveSharedValuation } from "@/lib/propertyService";
 import ValuationResultDisplay from "@/components/property/ValuationResultDisplay";
 import YearInput from "@/components/property/YearInput";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 
 const ValuationCalculator = ({ user, onValuationCalculated }) => {
   const { toast } = useToast();
-  const [initialYear, setInitialYear] = useState(new Date().getFullYear() - 5);
-  const [initialValue, setInitialValue] = useState("");
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [currentValue, setCurrentValue] = useState("");
+  
+  const [initialYear, setInitialYear] = useLocalStorageState("property-tools:valuation:initialYear", new Date().getFullYear() - 5);
+  const [initialValue, setInitialValue] = useLocalStorageState("property-tools:valuation:initialValue", "");
+  const [currentYear, setCurrentYear] = useLocalStorageState("property-tools:valuation:finalYear", new Date().getFullYear());
+  const [currentValue, setCurrentValue] = useLocalStorageState("property-tools:valuation:finalValue", "");
+  
   const [calculationResult, setCalculationResult] = useState(null);
   const [isSharing, setIsSharing] = useState(false);
 
   const currentYearLimit = new Date().getFullYear();
+
+  const resetCalculator = () => {
+    setInitialYear(new Date().getFullYear() - 5);
+    setInitialValue("");
+    setCurrentYear(new Date().getFullYear());
+    setCurrentValue("");
+    setCalculationResult(null);
+    
+    localStorage.removeItem("property-tools:valuation:initialYear");
+    localStorage.removeItem("property-tools:valuation:initialValue");
+    localStorage.removeItem("property-tools:valuation:finalYear");
+    localStorage.removeItem("property-tools:valuation:finalValue");
+  };
 
   const calculateValuation = () => {
     const iYear = parseInt(initialYear, 10);
@@ -99,14 +116,25 @@ const ValuationCalculator = ({ user, onValuationCalculated }) => {
 
   return (
     <Card className="shadow-xl border-t-4 border-green-600 bg-white">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-2xl text-gray-800">
-          <TrendingUp className="h-7 w-7 text-green-700" />
-          Calculadora de Valoración de Propiedad
-        </CardTitle>
-        <CardDescription className="text-gray-600">
-          Calcula la apreciación anual y el aumento de valor de una propiedad.
-        </CardDescription>
+      <CardHeader className="flex flex-row justify-between items-start">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-2xl text-gray-800">
+            <TrendingUp className="h-7 w-7 text-green-700" />
+            Calculadora de Valoración de Propiedad
+          </CardTitle>
+          <CardDescription className="text-gray-600 mt-1">
+            Calcula la apreciación anual y el aumento de valor de una propiedad.
+          </CardDescription>
+        </div>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={resetCalculator}
+          className="text-gray-600 hover:text-red-600 flex items-center shrink-0"
+        >
+          <Trash2 className="w-4 h-4 mr-1" />
+          Limpiar
+        </Button>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
