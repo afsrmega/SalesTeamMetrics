@@ -459,8 +459,7 @@ const SalesMemberDashboard = () => {
         throw new Error("No se pudo obtener la URL pública de la imagen.");
       }
 
-      const functionUrl =
-        `${import.meta.env.VITE_SUPABASE_URL || 'https://hqkntfemxfcpmzfipkyk.supabase.co'}/functions/v1/update-own-profile-photo`;
+      const functionUrl = 'https://wvodcaxnrybfcnenccad.supabase.co/functions/v1/update-own-profile-photo';
 
       const response = await fetch(functionUrl, {
         method: 'POST',
