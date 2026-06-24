@@ -125,6 +125,8 @@ const SalesMemberDashboard = () => {
     return salesTeam.find(m => m.linkedUserId === user.id);
   }, [salesTeam, user]);
 
+  const isProtectedAdminAccount = memberData?.role === 'admin' || memberData?.is_admin === true;
+
   useEffect(() => {
     setLocalProfilePhotoUrl(memberData?.photo_url || null);
   }, [memberData?.photo_url]);
@@ -459,7 +461,7 @@ const SalesMemberDashboard = () => {
         throw new Error("No se pudo obtener la URL pública de la imagen.");
       }
 
-      const functionUrl = 'https://wvodcaxnrybfcnenccad.supabase.co/functions/v1/update-own-profile-photo';
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL || 'https://wvodcaxnrybfcnenccad.supabase.co'}/functions/v1/update-own-profile-photo`;
 
       const response = await fetch(functionUrl, {
         method: 'POST',
@@ -583,6 +585,15 @@ const SalesMemberDashboard = () => {
 
   // Delete Member Handlers
   const handleOpenDeleteMemberModal = () => {
+    if (isProtectedAdminAccount) {
+      toast({
+        title: "Acción no permitida",
+        description: "La cuenta administradora no puede eliminarse por seguridad.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setShowDeleteMemberModal(true);
   };
 
@@ -591,6 +602,17 @@ const SalesMemberDashboard = () => {
   };
 
   const handleDeleteMember = async () => {
+    if (isProtectedAdminAccount) {
+      toast({
+        title: "Acción no permitida",
+        description: "La cuenta administradora no puede eliminarse por seguridad.",
+        variant: "destructive"
+      });
+
+      handleCloseDeleteMemberModal();
+      return;
+    }
+
     if (!memberData?.id) {
       toast({
         title: "Error",
@@ -1648,55 +1670,57 @@ const SalesMemberDashboard = () => {
       </Dialog>
 
       {/* Delete Member Modal */}
+      {!isProtectedAdminAccount && (
       <Dialog open={showDeleteMemberModal} onOpenChange={setShowDeleteMemberModal}>
-        <DialogContent className="sm:max-w-[425px] z-50">
-          <DialogHeader>
-            <DialogTitle className="text-red-600">
-              Eliminar Cuenta
-            </DialogTitle>
-
-            <DialogDescription>
-              Esta acción es permanente e irreversible.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <Alert variant="destructive" className="bg-red-50 border-red-200">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Advertencia</AlertTitle>
-              <AlertDescription>
-                Esto eliminará permanentemente tu cuenta ({memberData?.name}) y tu usuario de autenticación. No podrás volver a acceder a esta cuenta.
-              </AlertDescription>
-            </Alert>
-
-            <p className="text-sm text-gray-600">
-              ¿Estás seguro de que deseas eliminar tu cuenta? Esta acción no se puede deshacer.
-            </p>
-          </div>
-
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={handleCloseDeleteMemberModal} 
-              disabled={isDeleting}
-            >
-              Cancelar
-            </Button>
-
-            <Button 
-              onClick={handleDeleteMember} 
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {isDeleting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-
-              {isDeleting ? "Eliminando..." : "Eliminar Cuenta"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <DialogContent className="sm:max-w-[425px] z-50">
+            <DialogHeader>
+              <DialogTitle className="text-red-600">
+                Eliminar Cuenta
+              </DialogTitle>
+  
+              <DialogDescription>
+                Esta acción es permanente e irreversible.
+              </DialogDescription>
+            </DialogHeader>
+  
+            <div className="space-y-4 py-4">
+              <Alert variant="destructive" className="bg-red-50 border-red-200">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Advertencia</AlertTitle>
+                <AlertDescription>
+                  Esto eliminará permanentemente tu cuenta ({memberData?.name}) y tu usuario de autenticación. No podrás volver a acceder a esta cuenta.
+                </AlertDescription>
+              </Alert>
+  
+              <p className="text-sm text-gray-600">
+                ¿Estás seguro de que deseas eliminar tu cuenta? Esta acción no se puede deshacer.
+              </p>
+            </div>
+  
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={handleCloseDeleteMemberModal} 
+                disabled={isDeleting}
+              >
+                Cancelar
+              </Button>
+  
+              <Button 
+                onClick={handleDeleteMember} 
+                disabled={isDeleting}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {isDeleting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+  
+                {isDeleting ? "Eliminando..." : "Eliminar Cuenta"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

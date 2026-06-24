@@ -187,8 +187,10 @@ const CreateProspectModal = ({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={currentUser?.id || 'self'}>Yo (Admin)</SelectItem>
-                    {salesMembers.map(member => (
-                      <SelectItem key={member.user_id} value={member.user_id}>
+                    {salesMembers
+                      .filter(member => member.user_id !== currentUser?.id)
+                      .map(member => (
+                      <SelectItem key={member.id || member.user_id} value={member.user_id}>
                         {member.name}
                       </SelectItem>
                     ))}

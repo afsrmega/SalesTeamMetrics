@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import GlobalSettings from "@/components/sales/GlobalSettings";
@@ -57,6 +58,7 @@ import { calculateDateRange, filterSalesRecords } from "@/lib/filterSalesRecords
 import { format } from "date-fns";
 import { supabase } from "@/lib/customSupabaseClient";
 import { getVisibleMembersForPeriod } from "@/lib/memberVisibilityUtils";
+import { isAdminMember } from "@/lib/memberUtils";
 
 function validateDate(date) {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
@@ -93,7 +95,6 @@ const SalesMetrics = () => {
   const [periodMode, setPeriodMode] = useState(() => localStorage.getItem('adminPeriodMode') || 'quarter');
   const [selectedQuarterKey, setSelectedQuarterKey] = useState(() => localStorage.getItem('adminSelectedQuarterKey') || 'current');
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => localStorage.getItem('adminSelectedMonthKey') || 'current');
-  //const [memberStatusFilter, setMemberStatusFilter] = useState('active');
   const [memberStatusFilter, setMemberStatusFilter] = useState('period');
 
   const [effectiveMonthGoals, setEffectiveMonthGoals] = useState(null);
@@ -528,6 +529,14 @@ const SalesMetrics = () => {
     if (!user) return;
     const member = salesTeamRaw?.find(m => m.id === memberId);
     if (member) {
+      if (isAdminMember(member)) {
+        toast({ 
+          title: "Action not allowed", 
+          description: "Admin users cannot be archived or deleted.", 
+          variant: "destructive" 
+        });
+        return;
+      }
       setMemberPendingArchive(member);
       setIsArchiveModalOpen(true);
     }
@@ -561,12 +570,19 @@ const SalesMetrics = () => {
   };
 
   const handleOpenEditDialog = (member) => {
+    if (isAdminMember(member)) {
+      // Allow opening but save options might be disabled inside
+    }
     setEditingMember({ ...member, photoFile: null });
     setIsEditDialogOpen(true);
   };
 
   const handleSaveEditedMember = async (updatedMemberData) => {
     if (!user || !editingMember) return;
+    if (isAdminMember(editingMember)) {
+      toast({ title: "Action not allowed", description: "Admin users cannot be edited this way.", variant: "destructive" });
+      return;
+    }
     try {
       await updateSalesMember(editingMember, updatedMemberData, user.id);
       setIsEditDialogOpen(false);
@@ -926,6 +942,7 @@ const SalesMetrics = () => {
         onArchive={handleConfirmArchive}
         isProcessing={isArchiving}
         memberName={memberPendingArchive?.name}
+        member={memberPendingArchive}
       />
 
       <LinkUserDialog 

@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { User, DollarSign, ImagePlus, Trash2, Calendar } from "lucide-react";
+import { isAdminMember } from "@/lib/memberUtils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUrl }) => {
   const [editedMember, setEditedMember] = useState({ 
@@ -64,7 +66,6 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
     }
     setError(null);
     
-    // Normalize new_member_start_date to ensure it's never an empty string
     onSave({ 
       ...editedMember, 
       photoFile, 
@@ -75,6 +76,8 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
   };
 
   if (!member) return null;
+
+  const isAdmin = isAdminMember(member);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -98,16 +101,18 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
               </AvatarFallback>
             </Avatar>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="relative">
+              <Button variant="outline" size="sm" className="relative" disabled={isAdmin}>
                 <ImagePlus className="mr-2 h-4 w-4" /> Cambiar Foto
-                <Input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handlePhotoChange} 
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
+                {!isAdmin && (
+                  <Input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handlePhotoChange} 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                )}
               </Button>
-              {photoPreview && (
+              {photoPreview && !isAdmin && (
                 <Button variant="ghost" size="sm" onClick={handleRemovePhoto} className="text-red-600 hover:bg-red-100">
                   <Trash2 className="mr-2 h-4 w-4" /> Quitar
                 </Button>
@@ -124,8 +129,9 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
                 name="name"
                 value={editedMember.name}
                 onChange={handleInputChange}
+                disabled={isAdmin}
                 placeholder="Nombre completo"
-                className="pl-10 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                className="pl-10 border-gray-300 focus:border-green-500 focus:ring-green-500 disabled:opacity-50"
               />
             </div>
           </div>
@@ -141,8 +147,9 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
                   type="number"
                   value={editedMember.monthlySales}
                   onChange={handleInputChange}
+                  disabled={isAdmin}
                   placeholder="0"
-                  className="pl-10 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                  className="pl-10 border-gray-300 focus:border-green-500 focus:ring-green-500 disabled:opacity-50"
                 />
               </div>
             </div>
@@ -156,8 +163,9 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
                   type="number"
                   value={editedMember.quarterlySales}
                   onChange={handleInputChange}
+                  disabled={isAdmin}
                   placeholder="0"
-                  className="pl-10 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                  className="pl-10 border-gray-300 focus:border-green-500 focus:ring-green-500 disabled:opacity-50"
                 />
               </div>
             </div>
@@ -169,8 +177,9 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
                 id="edit-is_new_member" 
                 checked={editedMember.is_new_member} 
                 onCheckedChange={handleCheckboxChange} 
+                disabled={isAdmin}
               />
-              <Label htmlFor="edit-is_new_member" className="font-medium cursor-pointer text-gray-700">
+              <Label htmlFor="edit-is_new_member" className={`font-medium text-gray-700 ${isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                 Is this a new member? (Onboarding goals)
               </Label>
             </div>
@@ -186,7 +195,8 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
                     type="date"
                     value={editedMember.new_member_start_date || ""}
                     onChange={handleInputChange}
-                    className="pl-10 h-9 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                    disabled={isAdmin}
+                    className="pl-10 h-9 border-gray-300 focus:border-green-500 focus:ring-green-500 disabled:opacity-50"
                   />
                 </div>
                 {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
@@ -199,7 +209,22 @@ const EditMemberDialog = ({ isOpen, onOpenChange, member, onSave, currentPhotoUr
           <DialogClose asChild>
             <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100">Cancelar</Button>
           </DialogClose>
-          <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white">Guardar Cambios</Button>
+          {isAdmin ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button disabled className="bg-green-600/50 text-white cursor-not-allowed">
+                      Guardar Cambios
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Admin users cannot be archived or deleted</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white">Guardar Cambios</Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

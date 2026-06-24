@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.jsx";
@@ -8,6 +9,7 @@ import { formatCurrency, getCustomQuarter } from "@/lib/salesUtils";
 import MemberSalesDialog from "@/components/sales/MemberSalesDialog";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { isAdminMember } from "@/lib/memberUtils";
 
 const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMember, onSetPassword, disabled, effectiveMonthGoals, effectiveQuarterGoals, periodMode }) => {
   const [selectedMemberForSales, setSelectedMemberForSales] = useState(null);
@@ -97,6 +99,8 @@ const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMembe
                 const commissionAmount = metrics.commissionAmount || 0;
                 const tierRange = metrics.tierRange || "";
                 
+                const isAdmin = isAdminMember(member);
+                
                 return (
                     <TableRow key={member.id} className="hover:bg-green-50/30 transition-colors">
                     <TableCell className="text-center font-bold">{index + 1}</TableCell>
@@ -106,7 +110,10 @@ const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMembe
                         <AvatarFallback className="bg-gray-200">{member.name?.charAt(0)}</AvatarFallback>
                         </Avatar>
                     </TableCell>
-                    <TableCell className="font-medium text-gray-800">{member.name}</TableCell>
+                    <TableCell className="font-medium text-gray-800">
+                        {member.name}
+                        {isAdmin && <Badge variant="destructive" className="ml-2">Admin</Badge>}
+                    </TableCell>
                     <TableCell className="text-right text-gray-600 font-medium">
                         {formatCurrency(monthlySales)}
                     </TableCell>
@@ -146,12 +153,43 @@ const SalesTeamTable = ({ salesTeam, globalSettings, onDeleteMember, onEditMembe
                              <KeyRound className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon" onClick={() => onEditMember(member)} title="Editar" className="text-blue-600 h-8 w-8">
-                            <Edit3 className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => onDeleteMember(member.id)} title="Eliminar" className="text-red-600 h-8 w-8">
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {isAdmin ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button variant="ghost" size="icon" disabled className="text-blue-600/50 h-8 w-8 cursor-not-allowed">
+                                      <Edit3 className="h-4 w-4" />
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>Admin users cannot be archived or deleted</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <Button variant="ghost" size="icon" onClick={() => onEditMember(member)} title="Editar" className="text-blue-600 h-8 w-8">
+                              <Edit3 className="h-4 w-4" />
+                          </Button>
+                        )}
+
+                        {isAdmin ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button variant="ghost" size="icon" disabled className="text-red-600/50 h-8 w-8 cursor-not-allowed">
+                                      <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>Admin users cannot be archived or deleted</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <Button variant="ghost" size="icon" onClick={() => onDeleteMember(member.id)} title="Eliminar" className="text-red-600 h-8 w-8">
+                              <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                        </div>
                     </TableCell>
                     </TableRow>

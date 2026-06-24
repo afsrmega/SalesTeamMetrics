@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -331,6 +332,7 @@ export const AuthProvider = ({ children }) => {
     updateGlobalSettings,
     updateUserColors,
     setGlobalSettings,
+    setGlobalSettingsState: setGlobalSettings,
     fetchSettings
   }), [
     user,
@@ -345,6 +347,7 @@ export const AuthProvider = ({ children }) => {
     signOut,
     updateGlobalSettings,
     updateUserColors,
+    setGlobalSettings,
     fetchSettings
   ]);
 

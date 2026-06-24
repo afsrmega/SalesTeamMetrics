@@ -278,7 +278,6 @@ logger.error = (msg, options) => {
 }
 
 export default defineConfig({
-	// GitHub Pages: use relative asset paths so the app works under /<repo-name>/
 	base: './',
 	customLogger: logger,
 	plugins: [

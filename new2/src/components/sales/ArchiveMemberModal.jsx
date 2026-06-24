@@ -6,10 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { isAdminMember } from "@/lib/memberUtils";
 
-const ArchiveMemberModal = ({ isOpen, onClose, onArchive, isProcessing, memberName }) => {
+const ArchiveMemberModal = ({ isOpen, onClose, onArchive, isProcessing, memberName, member }) => {
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
+  const { toast } = useToast();
 
   useEffect(() => {
     if (isOpen) {
@@ -21,6 +24,14 @@ const ArchiveMemberModal = ({ isOpen, onClose, onArchive, isProcessing, memberNa
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isAdminMember(member)) {
+      toast({
+        title: "Action not allowed",
+        description: "Admin users cannot be archived or deleted.",
+        variant: "destructive"
+      });
+      return;
+    }
     onArchive({ employment_end_date: endDate, archive_reason: reason });
   };
 
